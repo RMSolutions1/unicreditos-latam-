@@ -7,10 +7,14 @@ import { DecisionEngineService, DECISION_RULES_VERSION, type Decision } from '..
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
 import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
+import { notify } from '@unicreditos/notifications'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 const FIRST_CREDIT_HARD_CAP = 400_000
 const INCOME_DTI_RATIO = 0.35
+
+/** Roles con motivo de negocio para ver solicitudes/créditos de un cliente que no es el propio. */
+const CREDIT_STAFF_ROLES: string[] = ['RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO']
 
 const DECISION_TO_STATUS: Record<Decision, 'APPROVED' | 'PRE_APPROVED' | 'MANUAL_REVIEW' | 'REJECTED'> = {
   APPROVE: 'APPROVED',
@@ -130,7 +134,10 @@ export class ApplicationsService {
     })
     if (!application) throw new DomainError('NOT_FOUND', 'Solicitud no encontrada.')
     const isOwner = application.userId === requester.id
-    const isStaff = requester.role !== 'CUSTOMER'
+    // Hallazgo de auditoría: "cualquier rol que no sea CUSTOMER" es demasiado amplio (dejaba a
+    // INVESTOR, SUPPORT, MERCHANT_ADMIN, etc. leer solicitudes de cualquier cliente). Solo el
+    // staff con motivo real de negocio para ver esto.
+    const isStaff = CREDIT_STAFF_ROLES.includes(requester.role)
     if (!isOwner && !isStaff) throw new DomainError('NOT_FOUND', 'Solicitud no encontrada.')
     return application
   }
@@ -141,6 +148,11 @@ export class ApplicationsService {
     if (!application) throw new DomainError('NOT_FOUND', 'Solicitud no encontrada.')
     if (application.status !== 'PRE_APPROVED' && application.status !== 'MANUAL_REVIEW') {
       throw new DomainError('INVALID_TRANSITION', `No se puede revisar una solicitud en estado ${application.status}.`)
+    }
+    // Segregación de funciones (master prompt §33/56, hallazgo de auditoría): un revisor no
+    // puede aprobar/rechazar su propia solicitud, aunque tenga rol de staff.
+    if (application.userId === admin.id) {
+      throw new DomainError('SEGREGATION_OF_DUTIES_VIOLATION', 'No podés revisar tu propia solicitud.')
     }
 
     const nextStatus = action === 'approve' ? 'APPROVED' : 'REJECTED'
@@ -210,7 +222,7 @@ export class ApplicationsService {
       throw new DomainError('SEGREGATION_OF_DUTIES_VIOLATION', 'No podés desembolsar tu propio crédito.')
     }
     const approverDecision = application.decisions.find((d) => d.decision === 'APPROVED_BY_REVIEWER' || d.decision === 'APPROVE')
-    if (approverDecision && approverDecision.decidedBy !== 'system' && approverDecision.decidedBy === treasury.id) {
+    if (approverDecision?.decidedBy === treasury.id) {
       throw new DomainError('SEGREGATION_OF_DUTIES_VIOLATION', 'Quien aprueba una solicitud no puede además desembolsarla.')
     }
 
@@ -266,6 +278,13 @@ export class ApplicationsService {
     })
 
     await this.audit({ actorId: treasury.id, actorRole: treasury.role, action: 'CREDIT_DISBURSED', resource: 'credit', resourceId: credit.id, after: { amount: credit.amount, disbursedTo: credit.disbursedTo }, ctx })
+
+    // Notificación fuera de la transacción de DB: un fallo de email nunca debe revertir un desembolso ya confirmado.
+    const customer = await this.prisma.client.user.findUnique({ where: { id: application.userId } })
+    if (customer) {
+      void notify({ type: 'CREDIT_DISBURSED', to: customer.email, firstName: customer.firstName, publicId: credit.publicId, amount: Number(credit.amount), disbursedTo: credit.disbursedTo ?? '' })
+    }
+
     return this.prisma.client.credit.findUnique({ where: { id: credit.id }, include: { installments: true } })
   }
 }

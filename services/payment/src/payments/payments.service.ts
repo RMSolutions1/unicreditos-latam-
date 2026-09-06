@@ -6,9 +6,14 @@ import { MercadoPagoAdapter } from '../providers/mercadopago.adapter'
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
 import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
+import { notify } from '@unicreditos/notifications'
+import { splitPrincipalAndInterest } from './principal-interest-split'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 type SessionContext = { ip?: string; userAgent?: string; requestId: string }
+
+/** Roles con motivo de negocio para ver pagos de un cliente que no es el propio. */
+const PAYMENT_STAFF_ROLES: string[] = ['TREASURY_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CFO']
 
 @Injectable()
 export class PaymentsService {
@@ -74,7 +79,9 @@ export class PaymentsService {
     const intent = await this.prisma.client.paymentIntent.findUnique({ where: { id }, include: { installment: { include: { credit: true } } } })
     if (!intent) throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
     const isOwner = intent.userId === requester.id
-    if (!isOwner && requester.role === 'CUSTOMER') throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
+    // Hallazgo de auditoría: "cualquier rol que no sea CUSTOMER" era demasiado amplio.
+    const isStaff = PAYMENT_STAFF_ROLES.includes(requester.role)
+    if (!isOwner && !isStaff) throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
     return intent
   }
 
@@ -117,32 +124,47 @@ export class PaymentsService {
     const payment = await this.mercadoPago.getPayment(dataId)
 
     if (payment.status === 'approved' && payment.externalReference) {
-      const intent = await this.prisma.client.paymentIntent.findUnique({ where: { externalReference: payment.externalReference }, include: { installment: { include: { credit: true } } } })
-      if (intent && intent.status !== 'APPROVED') {
-        await this.prisma.client.$transaction(async (tx) => {
+      const intentSummary = await this.prisma.client.paymentIntent.findUnique({ where: { externalReference: payment.externalReference } })
+      if (intentSummary && intentSummary.status !== 'APPROVED') {
+        const approvedNotification = await this.prisma.client.$transaction(async (tx) => {
+          // Releído DENTRO de la transacción (hallazgo de auditoría): el snapshot de afuera podía
+          // quedar stale si dos webhooks para el mismo crédito se procesan casi al mismo tiempo,
+          // pisando el balance/amountPaid calculado con datos viejos.
+          const intent = await tx.paymentIntent.findUniqueOrThrow({ where: { id: intentSummary.id }, include: { installment: { include: { credit: true } } } })
+          if (intent.status === 'APPROVED') return null // otro proceso ya lo aprobó mientras esperábamos el lock
+
           await tx.paymentIntent.update({ where: { id: intent.id }, data: { status: 'APPROVED', providerPaymentId: payment.providerPaymentId } })
 
           const newAmountPaid = Math.min(Number(intent.installment.amountPaid) + Number(intent.amount), Number(intent.installment.totalDue))
           const installmentStatus = newAmountPaid >= Number(intent.installment.totalDue) ? 'PAID' : 'PARTIALLY_PAID'
           await tx.installment.update({ where: { id: intent.installmentId }, data: { amountPaid: newAmountPaid, status: installmentStatus } })
 
-          const remainingBalance = Math.max(0, Number(intent.installment.credit.balance) - Number(intent.amount))
+          // Credit.balance representa CAPITAL pendiente, no "lo que falta cobrar" -- solo la
+          // porción de capital de este pago se descuenta, nunca el interés (hallazgo corregido
+          // antes de construir el pago anticipado en Fase 6, que necesita un capital exacto).
+          const { principalPortion, interestPortion } = splitPrincipalAndInterest(
+            Number(intent.amount),
+            Number(intent.installment.principal),
+            Number(intent.installment.totalDue),
+          )
+
+          const remainingBalance = Math.max(0, Number(intent.installment.credit.balance) - principalPortion)
           const unpaidCount = await tx.installment.count({ where: { creditId: intent.installment.creditId, status: { not: 'PAID' } } })
           await tx.credit.update({
             where: { id: intent.installment.creditId },
             data: { balance: remainingBalance, status: unpaidCount === 0 ? 'PAID_OFF' : undefined },
           })
 
-          // Ledger de doble entrada (master prompt §39): el pago de cuota mueve fondos del
-          // cliente hacia TREASURY (disminuye lo que nos debe).
-          await postLedgerTransaction(tx, {
-            type: 'REPAYMENT',
-            reference: intent.id,
-            entries: [
-              { ownerType: 'CUSTOMER', ownerId: intent.userId, direction: 'CREDIT', amount: Number(intent.amount) },
-              { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'DEBIT', amount: Number(intent.amount) },
-            ],
-          })
+          // Ledger de doble entrada real (master prompt §39): el capital reduce lo que nos debe
+          // el cliente (cuenta CUSTOMER); el interés es ingreso reconocido (cuenta REVENUE).
+          // TREASURY recibe el efectivo completo. Débitos siempre == créditos.
+          const entries: Parameters<typeof postLedgerTransaction>[1]['entries'] = [
+            { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'DEBIT', amount: Number(intent.amount) },
+          ]
+          if (principalPortion > 0) entries.push({ ownerType: 'CUSTOMER', ownerId: intent.userId, direction: 'CREDIT', amount: principalPortion })
+          if (interestPortion > 0) entries.push({ ownerType: 'REVENUE', ownerId: GLOBAL_OWNER_ID, direction: 'CREDIT', amount: interestPortion })
+
+          await postLedgerTransaction(tx, { type: 'REPAYMENT', reference: intent.id, entries })
 
           await tx.auditLog.create({
             data: {
@@ -155,7 +177,24 @@ export class PaymentsService {
               requestId: ctx.requestId,
             },
           })
+
+          return { userId: intent.userId, amount: Number(intent.amount), installmentNumber: intent.installment.number, creditPublicId: intent.installment.credit.publicId }
         })
+
+        // Fuera de la transacción: un fallo de email no debe revertir un pago ya acreditado.
+        if (approvedNotification) {
+          const customer = await this.prisma.client.user.findUnique({ where: { id: approvedNotification.userId } })
+          if (customer) {
+            void notify({
+              type: 'PAYMENT_RECEIVED',
+              to: customer.email,
+              firstName: customer.firstName,
+              installmentNumber: approvedNotification.installmentNumber,
+              amount: approvedNotification.amount,
+              creditPublicId: approvedNotification.creditPublicId,
+            })
+          }
+        }
       }
     } else if (['rejected', 'cancelled'].includes(payment.status) && payment.externalReference) {
       await this.prisma.client.paymentIntent.updateMany({
