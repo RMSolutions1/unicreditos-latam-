@@ -312,3 +312,6 @@ td button.secondary { width: auto; padding: 6px 10px; font-size: 12px; margin-ri
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-secondary); font-weight: 700; margin: 24px 0 8px; }
 .back-link { display: inline-block; margin-bottom: 12px; color: var(--color-secondary); text-decoration: none; font-size: 13px; }
 .detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; background: var(--color-white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 8px; font-size: 13px; }
+
+td details summary { cursor: pointer; color: var(--color-accent); font-weight: 600; white-space: nowrap; }
+.audit-detail { white-space: pre-wrap; max-width: 360px; font-size: 11px; background: var(--color-neutral); padding: 8px; border-radius: 6px; margin-top: 6px; }

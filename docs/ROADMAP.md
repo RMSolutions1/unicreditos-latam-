@@ -70,7 +70,8 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [x] Créditos: listado completo + cuotas por crédito.
 - [x] Cobranzas: casos activos, disparar el scan, registrar acciones.
 - [x] Tesorería: dashboard + reconciliación con las diferencias resaltadas visualmente.
-- [ ] Usuarios, Clientes, Comercios, Compliance, Fraude, Documentos, Contratos, Reportes, Notificaciones, Configuración, Auditoría, Sistema.
+- [x] Auditoría: lectura de `AuditLog` (append-only) con filtros por recurso/acción, paginación y detalle antes/después — `GET /audit-logs` en `identity`, restringido a `SUPER_ADMIN/CEO/COMPLIANCE_MANAGER/AUDITOR`, probado en vivo contra 60 eventos reales.
+- [ ] Usuarios, Clientes, Comercios, Compliance, Fraude, Documentos, Contratos, Reportes, Notificaciones, Configuración, Sistema.
 - [ ] Tablas admin con búsqueda, filtros, orden, paginación, export asíncrono (`ExportJob`).
 - [ ] Inversores — bloqueado hasta validación legal (Fase 7).
 

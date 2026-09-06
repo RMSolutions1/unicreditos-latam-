@@ -99,6 +99,23 @@ export type Reconciliation = {
   allMatch: boolean
 }
 
+export type AuditLog = {
+  id: string
+  actorId: string | null
+  actorRole: string
+  action: string
+  resource: string
+  resourceId: string
+  before: unknown
+  after: unknown
+  ip: string | null
+  device: string | null
+  createdAt: string
+  actor?: { firstName: string; lastName: string; email: string } | null
+}
+
+export type AuditLogPage = { items: AuditLog[]; page: number; pageSize: number; total: number }
+
 export type CollectionCase = {
   id: string
   creditId: string
@@ -136,4 +153,13 @@ export const api = {
   collectionScan: () => request<{ scanned: number }>(COLLECTION_BASE, '/collections/scan', { method: 'POST' }),
   collectionAction: (id: string, action: 'CONTACT_ATTEMPT' | 'PROMISE_TO_PAY' | 'MARK_RECOVERED', notes?: string) =>
     request(COLLECTION_BASE, `/collections/cases/${id}/action`, { method: 'POST', body: JSON.stringify({ action, notes }) }),
+
+  auditLogs: (params: { resource?: string; action?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.resource) query.set('resource', params.resource)
+    if (params.action) query.set('action', params.action)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<AuditLogPage>(IDENTITY_BASE, `/audit-logs${qs ? `?${qs}` : ''}`)
+  },
 }

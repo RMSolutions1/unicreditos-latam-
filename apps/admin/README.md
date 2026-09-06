@@ -15,6 +15,9 @@ de simplicidad que el resto del prototipo hasta que haya una razón real para su
   (contacto/promesa de pago/marcar recuperado).
 - **Tesorería** — dashboard + reconciliación `Credit.balance` vs. ledger, con las filas que no
   coinciden resaltadas.
+- **Auditoría** — lectura de `AuditLog` (append-only, `GET /audit-logs` en `identity`) con filtros
+  por recurso/acción, paginación y detalle antes/después por evento. Solo `SUPER_ADMIN`, `CEO`,
+  `COMPLIANCE_MANAGER` y `AUDITOR` tienen el rol necesario.
 
 Todo protegido por rol vía los mismos endpoints que ya tenían RBAC (`@Roles(...)`) — un
 `CUSTOMER` no ve nada de esto porque `/users/me` no le da acceso a las páginas, y aunque llegara,
@@ -23,7 +26,7 @@ cada llamada a la API la rechaza el backend igual (nunca se confía en el fronte
 ## Pendiente (backoffice completo, master prompt §48)
 
 Usuarios, Clientes, Inversores (bloqueado por Fase 7), Comercios, Compliance, Fraude, Documentos,
-Contratos, Reportes, Notificaciones, Configuración, Auditoría, Sistema. Se suman incrementalmente.
+Contratos, Reportes, Notificaciones, Configuración, Sistema. Se suman incrementalmente.
 
 ## Correr local
 

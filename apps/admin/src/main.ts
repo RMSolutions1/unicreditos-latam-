@@ -1,5 +1,5 @@
 import './style.css'
-import { api, getToken, setToken, type CollectionCase, type Credit, type CreditApplication, type SessionUser } from './api'
+import { api, getToken, setToken, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser } from './api'
 
 const root = document.getElementById('app')!
 
@@ -56,6 +56,7 @@ const NAV_ITEMS = [
   { hash: '#/creditos', label: 'Créditos' },
   { hash: '#/cobranzas', label: 'Cobranzas' },
   { hash: '#/tesoreria', label: 'Tesorería' },
+  { hash: '#/auditoria', label: 'Auditoría' },
 ]
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
@@ -188,9 +189,9 @@ async function renderDashboard() {
       </div>
     </div>
     <p class="note">
-      Backoffice real (Fase 9 en construcción) — Dashboard, Solicitudes, Créditos, Cobranzas y
-      Tesorería funcionan contra los servicios reales. Usuarios/Clientes/Inversores/Comercios/
-      Compliance/Fraude/Documentos/Contratos/Reportes/Configuración/Auditoría quedan para
+      Backoffice real (Fase 9 en construcción) — Dashboard, Solicitudes, Créditos, Cobranzas,
+      Tesorería y Auditoría funcionan contra los servicios reales. Usuarios/Clientes/Inversores/
+      Comercios/Compliance/Fraude/Documentos/Contratos/Reportes/Configuración quedan para
       siguientes incrementos (ver <code>docs/ROADMAP.md</code>).
     </p>
   `)
@@ -486,6 +487,79 @@ async function renderTreasury() {
 }
 
 // ---------------------------------------------------------------------------
+// Auditoría
+// ---------------------------------------------------------------------------
+
+/** AuditLog es append-only (docs/DATABASE.md §6) -- esta página es solo lectura, sin acciones. */
+let auditState = { resource: '', action: '', page: 1 }
+
+function auditRow(log: AuditLog) {
+  const hasDetail = log.before !== null || log.after !== null
+  const detail = hasDetail
+    ? `<details><summary>Ver</summary><pre class="audit-detail">${escapeHtml(JSON.stringify({ before: log.before, after: log.after }, null, 2))}</pre></details>`
+    : '—'
+  const when = new Date(log.createdAt)
+  return `
+    <tr>
+      <td>${dateFmt(log.createdAt)} ${when.toLocaleTimeString('es-AR')}</td>
+      <td>${escapeHtml(log.actor ? `${log.actor.firstName} ${log.actor.lastName}` : (log.actorId ?? 'sistema'))}<div class="metric-sub">${escapeHtml(log.actorRole)}</div></td>
+      <td>${escapeHtml(log.action)}</td>
+      <td>${escapeHtml(log.resource)}<div class="metric-sub">${escapeHtml(log.resourceId)}</div></td>
+      <td>${escapeHtml(log.ip)}</td>
+      <td>${detail}</td>
+    </tr>
+  `
+}
+
+async function renderAudit() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.auditLogs({ resource: auditState.resource || undefined, action: auditState.action || undefined, page: auditState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+    setBody(`
+      <h1 class="page-title">Auditoría (${result.total} eventos)</h1>
+      <p class="note">Registro append-only: cada acción sensible de los 6 servicios queda acá con actor, antes/después e IP. Solo lectura.</p>
+      <form id="audit-filter-form" class="page-header-row" style="gap:8px;flex-wrap:wrap;">
+        <input id="audit-resource" placeholder="Recurso (ej: credit, user)" value="${escapeHtml(auditState.resource)}" style="max-width:220px;margin-bottom:0;" />
+        <input id="audit-action" placeholder="Acción (ej: USER_LOGIN)" value="${escapeHtml(auditState.action)}" style="max-width:220px;margin-bottom:0;" />
+        <button type="submit" style="width:auto;">Filtrar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Actor</th><th>Acción</th><th>Recurso</th><th>IP</th><th>Detalle</th></tr></thead>
+          <tbody>${result.items.length ? result.items.map(auditRow).join('') : '<tr><td colspan="6" class="empty">Sin eventos para este filtro.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="audit-prev" ${auditState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="audit-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('audit-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      auditState = {
+        resource: (document.getElementById('audit-resource') as HTMLInputElement).value.trim(),
+        action: (document.getElementById('audit-action') as HTMLInputElement).value.trim(),
+        page: 1,
+      }
+      renderAudit()
+    })
+    document.getElementById('audit-prev')?.addEventListener('click', () => {
+      auditState = { ...auditState, page: auditState.page - 1 }
+      renderAudit()
+    })
+    document.getElementById('audit-next')?.addEventListener('click', () => {
+      auditState = { ...auditState, page: auditState.page + 1 }
+      renderAudit()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudo cargar la auditoría.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -509,6 +583,7 @@ async function renderRoute() {
   else if (hash.startsWith('#/creditos')) await renderCredits()
   else if (hash.startsWith('#/cobranzas')) await renderCollections()
   else if (hash.startsWith('#/tesoreria')) await renderTreasury()
+  else if (hash.startsWith('#/auditoria')) await renderAudit()
   else await renderDashboard()
 }
 
