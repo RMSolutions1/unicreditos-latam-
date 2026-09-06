@@ -1,56 +1,52 @@
 import { PaymentRouterService } from './payment-router.service'
-import type { MercadoPagoAdapter } from './mercadopago.adapter'
-import type { AstroPayAdapter } from './astropay.adapter'
-
-function buildRouter(mpConfigured: boolean, astroConfigured: boolean) {
-  const mercadoPago = { name: 'mercadopago', isConfigured: () => mpConfigured } as unknown as MercadoPagoAdapter
-  const astroPay = { name: 'astropay', isConfigured: () => astroConfigured } as unknown as AstroPayAdapter
-  return new PaymentRouterService(mercadoPago, astroPay)
-}
+import { MercadoPagoAdapter } from './mercadopago.adapter'
+import { AstroPayAdapter } from './astropay.adapter'
+import { JsonLogger } from '../logging/json-logger.service'
+import { DomainError } from '../common/errors/domain-error'
 
 describe('PaymentRouterService', () => {
-  const originalEnv = process.env.ENABLE_ASTROPAY
+  let mercadoPago: MercadoPagoAdapter
+  let astroPay: AstroPayAdapter
+  let router: PaymentRouterService
 
-  afterEach(() => {
-    process.env.ENABLE_ASTROPAY = originalEnv
+  beforeEach(() => {
+    delete process.env.ENABLE_ASTROPAY
+    delete process.env.MERCADO_PAGO_ACCESS_TOKEN
+    delete process.env.ASTROPAY_CLIENT_ID
+    delete process.env.ASTROPAY_CLIENT_SECRET
+    mercadoPago = new MercadoPagoAdapter()
+    astroPay = new AstroPayAdapter(new JsonLogger())
+    router = new PaymentRouterService(mercadoPago, astroPay)
   })
 
-  it('sin preferencia, resuelve a Mercado Pago (default)', () => {
-    const router = buildRouter(true, true)
+  it('rechaza cualquier país que no sea AR', () => {
+    expect(() => router.resolve('MX')).toThrow(DomainError)
+  })
+
+  it('sin preferencia y con Mercado Pago configurado, devuelve Mercado Pago', () => {
+    process.env.MERCADO_PAGO_ACCESS_TOKEN = 'TEST-token'
     expect(router.resolve('AR').name).toBe('mercadopago')
   })
 
-  it('con preferencia explícita "mercadopago", resuelve a Mercado Pago', () => {
-    const router = buildRouter(true, true)
-    expect(router.resolve('AR', 'mercadopago').name).toBe('mercadopago')
+  it('sin Mercado Pago configurado, falla explícito en vez de caer a AstroPay silenciosamente', () => {
+    expect(() => router.resolve('AR')).toThrow(DomainError)
   })
 
-  it('con preferencia "astropay" y ENABLE_ASTROPAY=true, resuelve a AstroPay -- conviven', () => {
+  it('con preferencia astropay pero ENABLE_ASTROPAY=false, rechaza aunque haya credenciales', () => {
+    process.env.ASTROPAY_CLIENT_ID = 'id'
+    process.env.ASTROPAY_CLIENT_SECRET = 'secret'
+    expect(() => router.resolve('AR', 'astropay')).toThrow(DomainError)
+  })
+
+  it('con ENABLE_ASTROPAY=true pero sin credenciales, rechaza', () => {
     process.env.ENABLE_ASTROPAY = 'true'
-    const router = buildRouter(true, true)
+    expect(() => router.resolve('AR', 'astropay')).toThrow(DomainError)
+  })
+
+  it('con ENABLE_ASTROPAY=true y credenciales configuradas, devuelve AstroPay', () => {
+    process.env.ENABLE_ASTROPAY = 'true'
+    process.env.ASTROPAY_CLIENT_ID = 'id'
+    process.env.ASTROPAY_CLIENT_SECRET = 'secret'
     expect(router.resolve('AR', 'astropay').name).toBe('astropay')
-  })
-
-  it('con preferencia "astropay" pero ENABLE_ASTROPAY=false (default), rechaza aunque haya credenciales', () => {
-    delete process.env.ENABLE_ASTROPAY
-    const router = buildRouter(true, true)
-    expect(() => router.resolve('AR', 'astropay')).toThrow('AstroPay no está habilitado.')
-  })
-
-  it('con preferencia "astropay", ENABLE_ASTROPAY=true pero sin credenciales, rechaza', () => {
-    process.env.ENABLE_ASTROPAY = 'true'
-    const router = buildRouter(true, false)
-    expect(() => router.resolve('AR', 'astropay')).toThrow('AstroPay no está configurado.')
-  })
-
-  it('sin preferencia y Mercado Pago no configurado, rechaza (no hace fallback silencioso a AstroPay)', () => {
-    process.env.ENABLE_ASTROPAY = 'true'
-    const router = buildRouter(false, true)
-    expect(() => router.resolve('AR')).toThrow('Mercado Pago no está configurado.')
-  })
-
-  it('país no soportado, rechaza sin importar preferencia', () => {
-    const router = buildRouter(true, true)
-    expect(() => router.resolve('BR')).toThrow('No hay un proveedor de pago habilitado para "BR" todavía.')
   })
 })

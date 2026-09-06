@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { createVerify } from 'node:crypto'
 import { DomainError } from '../common/errors/domain-error'
+import { JsonLogger } from '../logging/json-logger.service'
 import type { CheckoutResult, CreateCheckoutInput, ProviderPaymentStatus } from './payment-provider.interface'
 
 type AstroPayCertificate = { serial_number: string; certificate: string }
@@ -16,6 +17,8 @@ type AstroPayCertificate = { serial_number: string; certificate: string }
 export class AstroPayAdapter {
   readonly name = 'astropay'
   private cachedToken: { accessToken: string; expiresAt: number } | null = null
+
+  constructor(private readonly logger: JsonLogger) {}
 
   private clientId() {
     return process.env.ASTROPAY_CLIENT_ID?.trim() ?? ''
@@ -75,25 +78,28 @@ export class AstroPayAdapter {
   }
 
   /**
-   * PENDIENTE CONFIRMAR (docs/ROADMAP.md Fase 4, 2026-09-06): una llamada real de prueba contra
-   * sandbox con este body devolvió 400 `{"error":"bad_request","detail":{"method":"is required"}}`.
-   * La doc de "Creating Payments" no lista un campo `method` en su tabla de Request Parameters --
-   * probablemente se refiera al "Integration Mode" (OFFSITE/EMBEDDED) que la doc de Checkout
-   * menciona como precondición sin nombrar el campo exacto. No se agrega un valor adivinado acá
-   * (mismo criterio que el resto del adapter): falta una llamada más contra sandbox real para
-   * confirmarlo antes de habilitar `ENABLE_ASTROPAY`.
+   * Corregido contra la referencia autoritativa real ("Platform → Payments", no la guía prosa de
+   * "Accept AstroPay → Checkout" que se leyó primero y que no lista `method` como campo -- las dos
+   * páginas de AstroPay describen el mismo endpoint de forma inconsistente entre sí). El 400
+   * `{"method":"is required"}` que devolvió sandbox confirma que esta es la que manda.
+   * `order.id` es la referencia documentada (no `merchant_payment_id` a nivel raíz); el callback
+   * de todas formas devuelve `merchant_payment_id` -- se asume que AstroPay lo completa desde
+   * `order.id`, pendiente de confirmar contra un callback real.
    */
   async createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult> {
     const token = await this.getAccessToken()
     const body: Record<string, unknown> = {
+      method: 'CHECKOUT',
       amount: Number(input.amount),
       currency: 'ARS',
       country: 'AR',
-      merchant_payment_id: input.externalReference,
+      order: { id: input.externalReference },
       redirect_success_url: `${this.siteBase()}/cuenta?astropay_status=success`,
       redirect_error_url: `${this.siteBase()}/cuenta?astropay_status=error`,
     }
-    if (input.payerEmail) body.user = { email: input.payerEmail, merchant_user_id: input.externalReference }
+    const notificationUrl = process.env.ASTROPAY_NOTIFICATION_URL?.trim()
+    if (notificationUrl?.startsWith('https://')) body.callback_notification = notificationUrl
+    if (input.payerEmail) body.user = { email: input.payerEmail }
 
     let response: Response
     try {
@@ -105,7 +111,13 @@ export class AstroPayAdapter {
     } catch (error) {
       throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', error instanceof Error ? error.message : 'AstroPay no respondió.')
     }
-    if (!response.ok) throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', `AstroPay rechazó la creación del pago (${response.status}).`)
+    if (!response.ok) {
+      // El detalle crudo de AstroPay queda solo en el log del servidor -- nunca en la respuesta al
+      // cliente (hallazgo de la auditoría de Fase 4: filtraba el body de error del proveedor).
+      const detail = await response.text().catch(() => '')
+      this.logger.error(`AstroPay rechazó la creación del pago (${response.status}): ${detail}`, undefined, 'AstroPayAdapter')
+      throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', `AstroPay rechazó la creación del pago (${response.status}).`)
+    }
 
     const data = (await response.json()) as { redirect_url?: string; payment_external_id?: string }
     if (!data.redirect_url) throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', 'AstroPay no devolvió un checkout válido.')
@@ -113,12 +125,29 @@ export class AstroPayAdapter {
   }
 
   /**
-   * No hay endpoint documentado de "consultar pago por id" para Checkout (a diferencia de
-   * Mercado Pago) -- el estado final llega completo en el callback. Falla explícito en vez de
-   * inventar una ruta que no está en la documentación real.
+   * `GET /v1/payments/{paymentId}?method=CHECKOUT` -- documentado en la misma página autoritativa
+   * "Platform → Payments" que reveló el campo `method` de createCheckout. No se usa en el flujo de
+   * webhook (el callback de AstroPay ya trae el estado completo) pero queda real para reconciliación
+   * manual, igual que MercadoPagoAdapter.getPayment.
    */
-  async getPayment(_providerPaymentId: string): Promise<ProviderPaymentStatus> {
-    throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', 'AstroPay no expone una consulta de pago por ID; el estado llega completo por webhook.')
+  async getPayment(providerPaymentId: string): Promise<ProviderPaymentStatus> {
+    const token = await this.getAccessToken()
+    let response: Response
+    try {
+      response = await fetch(`${this.baseUrl()}/v1/payments/${encodeURIComponent(providerPaymentId)}?method=CHECKOUT`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    } catch (error) {
+      throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', error instanceof Error ? error.message : 'AstroPay no respondió.')
+    }
+    if (!response.ok) throw new DomainError('PAYMENT_PROVIDER_UNAVAILABLE', `AstroPay rechazó la consulta de pago (${response.status}).`)
+
+    const data = (await response.json()) as { payment_id?: string; status?: string; merchant_payment_id?: string }
+    return {
+      providerPaymentId: data.payment_id ?? providerPaymentId,
+      status: String(data.status ?? 'unknown').toLowerCase(),
+      externalReference: data.merchant_payment_id ?? null,
+    }
   }
 
   private async getCertificates(): Promise<AstroPayCertificate[]> {

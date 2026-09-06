@@ -6,9 +6,10 @@ import { MercadoPagoAdapter } from '../providers/mercadopago.adapter'
 import { AstroPayAdapter } from '../providers/astropay.adapter'
 import { WebhooksController } from '../webhooks/webhooks.controller'
 import { AstroPayWebhooksController } from '../webhooks/astropay-webhooks.controller'
+import { JsonLogger } from '../logging/json-logger.service'
 
 @Module({
   controllers: [PaymentsController, WebhooksController, AstroPayWebhooksController],
-  providers: [PaymentsService, PaymentRouterService, MercadoPagoAdapter, AstroPayAdapter],
+  providers: [PaymentsService, PaymentRouterService, MercadoPagoAdapter, AstroPayAdapter, JsonLogger],
 })
 export class PaymentsModule {}
