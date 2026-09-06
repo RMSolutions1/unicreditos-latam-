@@ -7,7 +7,7 @@ import { JsonLogger } from './logging/json-logger.service'
 
 async function bootstrap() {
   const logger = new JsonLogger('payment')
-  const app = await NestFactory.create(AppModule, { logger })
+  const app = await NestFactory.create(AppModule, { logger, rawBody: true })
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true, transform: true }))
   app.useGlobalFilters(new DomainExceptionFilter(logger))
