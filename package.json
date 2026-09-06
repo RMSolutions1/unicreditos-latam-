@@ -5,7 +5,8 @@
   "type": "module",
   "workspaces": [
     "packages/*",
-    "services/*"
+    "services/*",
+    "apps/*"
   ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"tsx server/index.ts\" \"vite\"",

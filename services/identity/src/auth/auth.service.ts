@@ -155,4 +155,15 @@ export class AuthService {
       status: user.status,
     }
   }
+
+  async changePassword(userId: string, currentPassword: string, newPassword: string) {
+    const user = await this.prisma.client.user.findUniqueOrThrow({ where: { id: userId } })
+    const valid = await argon2.verify(user.passwordHash, currentPassword).catch(() => false)
+    if (!valid) throw new DomainError('INVALID_CREDENTIALS', 'La contraseña actual no es correcta.')
+
+    const passwordHash = await argon2.hash(newPassword)
+    await this.prisma.client.user.update({ where: { id: userId }, data: { passwordHash } })
+    // Cerrar todas las sesiones existentes: un cambio de contraseña revoca todo lo demás.
+    await this.prisma.client.refreshToken.updateMany({ where: { userId, revokedAt: null }, data: { revokedAt: new Date() } })
+  }
 }

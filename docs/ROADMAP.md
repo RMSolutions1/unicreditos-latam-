@@ -32,11 +32,12 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] Estados adicionales del ciclo completo (VERIFICATION, COMPLIANCE_REVIEW, OVERDUE, IN_COLLECTION, RESTRUCTURED, DEFAULTED, CLOSED) — se agregan con cobranza/ledger.
 
 ## Fase 4 — Payment Engine
-- [ ] `PaymentIntent`, `PaymentRouterService`, `MercadoPagoAdapter`.
-- [ ] `WebhookGateway` con verificación de firma fail-closed, idempotencia por `(provider, providerEventId)`, replay protection.
-- [ ] `AstroPayAdapter` construido contra la interfaz `PaymentProvider` pero **apagado** (`ENABLE_ASTROPAY=false`) hasta tener credenciales y documentación real.
-- [ ] Reconciliación (`/admin/payments/reconciliation`) comparando Provider vs Ledger vs Settlement.
-- [ ] Comprobantes PDF + envío por email.
+- [x] `PaymentIntent`, `PaymentRouterService`, `MercadoPagoAdapter` — checkout real creado contra la sandbox de Mercado Pago.
+- [x] Webhook con verificación de firma fail-closed (probado: sin firma → 401, firma inválida → 401, firma válida → pasa y llama a la API real), idempotencia por `(provider, providerEventId)` a nivel de constraint de DB.
+- [ ] `AstroPayAdapter` — interfaz `PaymentProvider` lista, `PaymentRouterService.resolve()` solo enruta a Mercado Pago para `AR` hoy; se agrega cuando haya credenciales y documentación real.
+- [ ] Reconciliación (`/admin/payments/reconciliation`) comparando Provider vs Ledger vs Settlement — Fase 5, cuando exista el ledger.
+- [ ] Comprobantes PDF + envío por email — hoy `GET /payment-intents/:id/receipt` devuelve JSON.
+- [ ] Completar un pago real en sandbox de punta a punta (requiere túnel HTTPS para que Mercado Pago llegue al webhook local).
 
 ## Fase 5 — Ledger y Tesorería
 - [ ] Ledger de doble entrada operando para desembolsos y pagos de cuota (reemplaza cualquier campo `balance` mutable directo).

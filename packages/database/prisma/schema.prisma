@@ -241,6 +241,8 @@ model Installment {
   amountPaid Decimal           @default(0) @db.Decimal(14, 2) @map("amount_paid")
   status     InstallmentStatus @default(PENDING)
 
+  paymentIntents PaymentIntent[]
+
   @@unique([creditId, number])
   @@index([creditId])
   @@map("installments")
@@ -299,4 +301,53 @@ model AuditLog {
   @@index([resource, resourceId])
   @@index([actorId])
   @@map("audit_logs")
+}
+
+// --- Payment Engine (Fase 4, docs/ROADMAP.md) -----------------------------------------------
+// Regla dura (master prompt §14/19/94): Loan -> Installment -> PaymentIntent -> PaymentRouter ->
+// ProviderAdapter -> PaymentProvider. El estado final SIEMPRE viene del webhook firmado del
+// proveedor, nunca de que el usuario "vuelva" del checkout.
+
+enum PaymentIntentStatus {
+  CREATED
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model PaymentIntent {
+  id                String              @id @default(cuid())
+  userId            String              @map("user_id")
+  installmentId     String              @map("installment_id")
+  installment       Installment         @relation(fields: [installmentId], references: [id])
+  amount            Decimal             @db.Decimal(14, 2)
+  currency          String              @default("ARS")
+  provider          String // "mercadopago" | "astropay" (deshabilitado, ver PaymentRouterService)
+  status            PaymentIntentStatus @default(CREATED)
+  externalReference String              @unique @map("external_reference")
+  idempotencyKey    String              @unique @map("idempotency_key")
+  providerPaymentId String?             @map("provider_payment_id")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([installmentId])
+  @@map("payment_intents")
+}
+
+// Idempotencia dura a nivel DB (master prompt §20): el unique constraint es lo que impide
+// procesar dos veces el mismo evento aunque el proveedor reintente el webhook.
+model WebhookEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  providerEventId String    @map("provider_event_id")
+  signatureValid  Boolean   @map("signature_valid")
+  payload         Json
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, providerEventId])
+  @@map("webhook_events")
 }

@@ -10,7 +10,10 @@
 -- No se agregan políticas permisivas: con RLS habilitado y sin policies, el default es
 -- denegar todo a los roles de PostgREST, que es exactamente lo que queremos hoy.
 
-ALTER TABLE "public"."_prisma_migrations" ENABLE ROW LEVEL SECURITY;
+-- IF EXISTS: la shadow database que usa "prisma migrate dev" para calcular diffs replay las
+-- migraciones sin pasar por el bookkeeping normal de Prisma, así que en ese contexto efímero
+-- esta tabla puede no existir todavía. IF EXISTS lo vuelve un no-op ahí sin afectar la base real.
+ALTER TABLE IF EXISTS "public"."_prisma_migrations" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."users" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."refresh_tokens" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "public"."audit_logs" ENABLE ROW LEVEL SECURITY;
