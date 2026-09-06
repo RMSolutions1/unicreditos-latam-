@@ -25,10 +25,11 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] Cifrado a nivel de columna para `rawResultEncrypted` (hoy el campo existe en el esquema pero no hay cifrado de aplicación todavía — hoy no se está guardando resultado crudo, solo el normalizado).
 
 ## Fase 3 — Credit Engine
-- [ ] `CreditProduct`, `CreditApplication`, `Credit`, `Installment`, `Contract`.
-- [ ] `RiskEngine` (score) separado de `DecisionEngine` (decisión), ambos versionados y auditables.
-- [ ] Flujo humano obligatorio: Preapproval → Risk Review → Compliance → Manual Approval → Treasury Approval → Disbursement.
-- [ ] `FinancialCalculationService` en backend (amortización francesa, TNA/TEA/CFT) — el frontend nunca calcula.
+- [x] `CreditProduct`, `CreditApplication`, `CreditDecision`, `Credit`, `Installment`, `Contract` — probado end-to-end contra Supabase.
+- [x] `RiskEngine` (score) separado de `DecisionEngine` (decisión), ambos versionados (`risk-v1` / `decision-rules-v1`) y auditables vía `CreditDecision`.
+- [x] Flujo humano obligatorio: solicitud → decisión automática → revisión (RISK_MANAGER/COMPLIANCE_MANAGER) → contrato → desembolso (TREASURY_MANAGER) con segregación de funciones real (no solo documentada) y verificación bancaria obligatoria antes de desembolsar.
+- [x] `FinancialCalculationService` en backend (amortización francesa, TNA/TEA/CFT + desglose capital/interés por cuota) — probado con un crédito real de 12 cuotas.
+- [ ] Estados adicionales del ciclo completo (VERIFICATION, COMPLIANCE_REVIEW, OVERDUE, IN_COLLECTION, RESTRUCTURED, DEFAULTED, CLOSED) — se agregan con cobranza/ledger.
 
 ## Fase 4 — Payment Engine
 - [ ] `PaymentIntent`, `PaymentRouterService`, `MercadoPagoAdapter`.

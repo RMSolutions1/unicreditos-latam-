@@ -48,6 +48,7 @@ model User {
   lastName     String     @map("last_name")
   dni          String?
   cuil         String?
+  income       Decimal?   @db.Decimal(14, 2)
   lastLoginAt  DateTime?  @map("last_login_at")
 
   createdAt DateTime  @default(now()) @map("created_at")
@@ -58,6 +59,7 @@ model User {
   auditLogs                 AuditLog[]
   kycVerifications          KycVerification[]
   bankAccountVerifications  BankAccountVerification[]
+  creditApplications        CreditApplication[]
 
   @@map("users")
 }
@@ -111,6 +113,153 @@ model BankAccountVerification {
 
   @@index([userId])
   @@map("bank_account_verifications")
+}
+
+// --- Credit Engine (Fase 3, docs/ROADMAP.md) ------------------------------------------------
+
+model CreditProduct {
+  id            String   @id
+  name          String
+  monthlyRate   Decimal  @db.Decimal(6, 3) @map("monthly_rate") // TEM en % (7.5 = 7,5%)
+  minAmount     Decimal  @db.Decimal(14, 2) @map("min_amount")
+  maxAmount     Decimal  @db.Decimal(14, 2) @map("max_amount")
+  minTermMonths Int      @map("min_term_months")
+  maxTermMonths Int      @map("max_term_months")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  applications CreditApplication[]
+
+  @@map("credit_products")
+}
+
+// Subconjunto de los 19 estados del master prompt (§11) — el resto (VERIFICATION,
+// COMPLIANCE_REVIEW, TREASURY_REVIEW, ACTIVE, OVERDUE, IN_COLLECTION, RESTRUCTURED, PAID,
+// DEFAULTED, CLOSED) se incorpora en las fases de KYC-crédito, cobranza y ledger.
+enum ApplicationStatus {
+  SUBMITTED
+  PRE_APPROVED
+  MANUAL_REVIEW
+  APPROVED
+  REJECTED
+  READY_FOR_DISBURSEMENT
+  DISBURSED
+  CANCELLED
+}
+
+model CreditApplication {
+  id             String            @id @default(cuid())
+  publicId       String            @unique @map("public_id")
+  userId         String            @map("user_id")
+  user           User              @relation(fields: [userId], references: [id])
+  productId      String            @map("product_id")
+  product        CreditProduct     @relation(fields: [productId], references: [id])
+  amount         Decimal           @db.Decimal(14, 2)
+  months         Int
+  monthlyPayment Decimal           @db.Decimal(14, 2) @map("monthly_payment")
+  tna            Decimal           @db.Decimal(6, 3)
+  tea            Decimal           @db.Decimal(6, 3)
+  cft            Decimal           @db.Decimal(6, 3)
+  status         ApplicationStatus @default(SUBMITTED)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  decisions CreditDecision[]
+  contract  Contract?
+  credit    Credit?
+
+  @@index([userId])
+  @@map("credit_applications")
+}
+
+// Toda decisión es auditable e inmutable (master prompt §32/37): una nueva revisión agrega
+// una fila nueva, nunca se sobrescribe una anterior.
+model CreditDecision {
+  id            String            @id @default(cuid())
+  applicationId String            @map("application_id")
+  application   CreditApplication @relation(fields: [applicationId], references: [id])
+  decision      String // APPROVE | PRE_APPROVE | MANUAL_REVIEW | REJECT | APPROVED_BY_REVIEWER | REJECTED_BY_REVIEWER
+  riskScore     Int               @map("risk_score")
+  riskLevel     String            @map("risk_level") // LOW | MEDIUM | HIGH | CRITICAL | MANUAL_REVIEW
+  modelVersion  String            @map("model_version")
+  rulesVersion  String            @map("rules_version")
+  inputs        Json
+  result        Json
+  decidedBy     String            @map("decided_by") // userId o "system"
+  decidedAt     DateTime          @default(now()) @map("decided_at")
+
+  @@index([applicationId])
+  @@map("credit_decisions")
+}
+
+enum CreditStatus {
+  ACTIVE
+  PAID_OFF
+}
+
+model Credit {
+  id            String            @id @default(cuid())
+  publicId      String            @unique @map("public_id")
+  applicationId String            @unique @map("application_id")
+  application   CreditApplication @relation(fields: [applicationId], references: [id])
+  userId        String            @map("user_id")
+  productId     String            @map("product_id")
+  amount        Decimal           @db.Decimal(14, 2)
+  balance       Decimal           @db.Decimal(14, 2)
+  months        Int
+  monthlyPayment Decimal          @db.Decimal(14, 2) @map("monthly_payment")
+  tna           Decimal           @db.Decimal(6, 3)
+  status        CreditStatus      @default(ACTIVE)
+  disbursedTo   String?           @map("disbursed_to")
+  disbursedBy   String            @map("disbursed_by") // userId del TREASURY_MANAGER (segregación de funciones)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  installments Installment[]
+
+  @@map("credits")
+}
+
+enum InstallmentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Installment {
+  id         String            @id @default(cuid())
+  creditId   String            @map("credit_id")
+  credit     Credit            @relation(fields: [creditId], references: [id])
+  number     Int
+  dueDate    DateTime          @map("due_date")
+  principal  Decimal           @db.Decimal(14, 2)
+  interest   Decimal           @db.Decimal(14, 2)
+  totalDue   Decimal           @db.Decimal(14, 2) @map("total_due")
+  amountPaid Decimal           @default(0) @db.Decimal(14, 2) @map("amount_paid")
+  status     InstallmentStatus @default(PENDING)
+
+  @@unique([creditId, number])
+  @@index([creditId])
+  @@map("installments")
+}
+
+// Nunca se sobrescribe un contrato (master prompt §37): "aceptar" crea el registro una sola vez.
+model Contract {
+  id               String            @id @default(cuid())
+  applicationId    String            @unique @map("application_id")
+  application      CreditApplication @relation(fields: [applicationId], references: [id])
+  version          Int               @default(1)
+  documentHash     String            @map("document_hash")
+  acceptedAt       DateTime          @map("accepted_at")
+  acceptedByUserId String            @map("accepted_by_user_id")
+  ip               String?
+  userAgent        String?           @map("user_agent")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@map("contracts")
 }
 
 model RefreshToken {
