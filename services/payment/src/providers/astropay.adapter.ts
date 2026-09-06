@@ -25,18 +25,16 @@ export class AstroPayAdapter {
     return process.env.ASTROPAY_CLIENT_SECRET?.trim() ?? ''
   }
 
-  private isSandbox() {
-    return (process.env.ASTROPAY_ENV ?? 'sandbox').trim().toLowerCase() !== 'production'
-  }
-
-  /** Hosts documentados solo para el endpoint de auth; el resto se infiere por convención y se
-   * confirma la primera vez que se pruebe contra sandbox real (docs/ROADMAP.md Fase 4). */
-  private authBaseUrl() {
-    return process.env.ASTROPAY_AUTH_BASE_URL?.trim() || (this.isSandbox() ? 'https://partners-api-sandbox.astropay.com' : 'https://partners-api.astropay.com')
-  }
-
-  private apiBaseUrl() {
-    return process.env.ASTROPAY_API_BASE_URL?.trim() || (this.isSandbox() ? 'https://api-sandbox.astropay.com' : 'https://api.astropay.com')
+  /**
+   * Confirmado en vivo contra sandbox real (docs/ROADMAP.md Fase 4, 2026-09-06): un único host
+   * sirve auth, certificados Y pagos -- NO hay split sandbox/producción por subdominio como decía
+   * la tabla "Environments" de la doc (`partners-api-sandbox.astropay.com` devuelve 401 con
+   * credenciales de sandbox válidas; `api.astropay.com`/`api-sandbox.astropay.com` no responden o
+   * son bloqueados por un WAF). Lo que sí diferencia sandbox de producción es el propio App
+   * ID/Secret Key -- cada set de credenciales ya apunta a su ambiente en el backend de AstroPay.
+   */
+  private baseUrl() {
+    return process.env.ASTROPAY_BASE_URL?.trim() || 'https://partners-api.astropay.com'
   }
 
   isConfigured() {
@@ -58,7 +56,7 @@ export class AstroPayAdapter {
     const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
     let response: Response
     try {
-      response = await fetch(`${this.authBaseUrl()}/v1/partners/oauth/token`, {
+      response = await fetch(`${this.baseUrl()}/v1/partners/oauth/token`, {
         method: 'POST',
         headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
         body: 'grant_type=client_credentials',
@@ -76,6 +74,15 @@ export class AstroPayAdapter {
     return data.access_token
   }
 
+  /**
+   * PENDIENTE CONFIRMAR (docs/ROADMAP.md Fase 4, 2026-09-06): una llamada real de prueba contra
+   * sandbox con este body devolvió 400 `{"error":"bad_request","detail":{"method":"is required"}}`.
+   * La doc de "Creating Payments" no lista un campo `method` en su tabla de Request Parameters --
+   * probablemente se refiera al "Integration Mode" (OFFSITE/EMBEDDED) que la doc de Checkout
+   * menciona como precondición sin nombrar el campo exacto. No se agrega un valor adivinado acá
+   * (mismo criterio que el resto del adapter): falta una llamada más contra sandbox real para
+   * confirmarlo antes de habilitar `ENABLE_ASTROPAY`.
+   */
   async createCheckout(input: CreateCheckoutInput): Promise<CheckoutResult> {
     const token = await this.getAccessToken()
     const body: Record<string, unknown> = {
@@ -90,7 +97,7 @@ export class AstroPayAdapter {
 
     let response: Response
     try {
-      response = await fetch(`${this.apiBaseUrl()}/v1/payments`, {
+      response = await fetch(`${this.baseUrl()}/v1/payments`, {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -118,7 +125,7 @@ export class AstroPayAdapter {
     const token = await this.getAccessToken()
     let response: Response
     try {
-      response = await fetch(`${this.apiBaseUrl()}/v1/certificates`, { headers: { Authorization: `Bearer ${token}` } })
+      response = await fetch(`${this.baseUrl()}/v1/certificates`, { headers: { Authorization: `Bearer ${token}` } })
     } catch {
       return []
     }

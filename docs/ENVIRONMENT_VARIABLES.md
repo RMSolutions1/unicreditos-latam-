@@ -42,12 +42,12 @@ MERCADOPAGO_WEBHOOK_SECRET      obligatorio en staging/production (fail-closed s
 MERCADOPAGO_NOTIFICATION_URL
 ```
 
-## AstroPay (preparado, apagado hasta credenciales reales)
+## AstroPay (convive con Mercado Pago para AR, wireado detrás de ENABLE_ASTROPAY)
 ```
-ASTROPAY_API_KEY
-ASTROPAY_SECRET
-ASTROPAY_ENVIRONMENT            sandbox | production
-ENABLE_ASTROPAY                 false por defecto
+ASTROPAY_CLIENT_ID
+ASTROPAY_CLIENT_SECRET
+ASTROPAY_BASE_URL               opcional, default https://partners-api.astropay.com (un único host sirve auth/certificados/pagos, confirmado en vivo -- ver docs/ROADMAP.md Fase 4)
+ENABLE_ASTROPAY                 false por defecto -- kill-switch aparte de tener credenciales
 ```
 
 ## Didit (KYC)
