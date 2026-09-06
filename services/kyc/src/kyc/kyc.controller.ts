@@ -1,7 +1,7 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common'
+import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Req, UseGuards } from '@nestjs/common'
 import type { Request } from 'express'
 import { randomUUID } from 'node:crypto'
-import { JwtAuthGuard, type AuthenticatedRequest } from '@unicreditos/auth'
+import { JwtAuthGuard, RolesGuard, Roles, type AuthenticatedRequest } from '@unicreditos/auth'
 import { KycService } from './kyc.service'
 import { ValidateBankAccountDto } from './dto/validate-bank-account.dto'
 
@@ -19,6 +19,14 @@ export class KycController {
   @Get('sessions/latest')
   getLatest(@Req() request: AuthenticatedRequest) {
     return this.kyc.getStatus(request.user!.id)
+  }
+
+  /** Vista "Clientes" del admin: estado de KYC de un cliente puntual, no el propio. */
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN')
+  @Get('users/:userId/latest')
+  getLatestForUser(@Param('userId') userId: string) {
+    return this.kyc.getStatus(userId)
   }
 
   @UseGuards(JwtAuthGuard)

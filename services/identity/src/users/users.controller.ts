@@ -115,8 +115,9 @@ export class UsersController {
     return { items: items.map(toPublicShape), page, pageSize, total }
   }
 
+  /** Ver el perfil de una cuenta es de lectura -- mismos roles que el listado, no solo SUPER_ADMIN. */
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPER_ADMIN')
+  @Roles(...USER_STAFF_ROLES)
   @Get(':id')
   async getOne(@Param('id') id: string) {
     const user = await this.prisma.client.user.findUnique({ where: { id } })

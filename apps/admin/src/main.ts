@@ -1,6 +1,14 @@
 import './style.css'
 import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser, type StaffUser } from './api'
 
+const KYC_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'Pendiente',
+  IN_PROGRESS: 'En progreso',
+  APPROVED: 'Aprobado',
+  REJECTED: 'Rechazado',
+  EXPIRED: 'Expirado',
+}
+
 const root = document.getElementById('app')!
 
 function money(value: string | number) {
@@ -61,6 +69,7 @@ const NAV_ITEMS = [
   { hash: '#/tesoreria', label: 'Tesorería' },
   { hash: '#/auditoria', label: 'Auditoría' },
   { hash: '#/usuarios', label: 'Usuarios' },
+  { hash: '#/clientes', label: 'Clientes' },
 ]
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
@@ -654,6 +663,141 @@ async function renderUsers() {
 }
 
 // ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+
+let clientsState = { search: '', page: 1 }
+
+async function renderClients() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.users({ role: 'CUSTOMER', search: clientsState.search || undefined, page: clientsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Clientes (${result.total})</h1>
+      <form id="clients-filter-form" class="page-header-row" style="gap:8px;">
+        <input id="clients-search" placeholder="Buscar por nombre, email o DNI" value="${escapeHtml(clientsState.search)}" style="max-width:280px;margin-bottom:0;" />
+        <button type="submit" style="width:auto;">Buscar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Estado</th><th>Ingreso declarado</th><th>Cliente desde</th><th></th></tr></thead>
+          <tbody>
+            ${
+              result.items.length
+                ? result.items
+                    .map(
+                      (u) => `
+              <tr>
+                <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
+                <td>${escapeHtml(u.email)}</td>
+                <td>${statusBadge(u.status)}</td>
+                <td>${u.income ? money(u.income) : '—'}</td>
+                <td>${dateFmt(u.createdAt)}</td>
+                <td><a href="#/clientes/${u.id}">Ver ficha →</a></td>
+              </tr>
+            `,
+                    )
+                    .join('')
+                : '<tr><td colspan="6" class="empty">Sin resultados.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="clients-prev" ${clientsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="clients-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('clients-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      clientsState = { search: (document.getElementById('clients-search') as HTMLInputElement).value.trim(), page: 1 }
+      renderClients()
+    })
+    document.getElementById('clients-prev')?.addEventListener('click', () => {
+      clientsState = { ...clientsState, page: clientsState.page - 1 }
+      renderClients()
+    })
+    document.getElementById('clients-next')?.addEventListener('click', () => {
+      clientsState = { ...clientsState, page: clientsState.page + 1 }
+      renderClients()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los clientes.')}</div>`)
+  }
+}
+
+async function renderClientDetail(id: string) {
+  setBody(`<div class="loading">Cargando…</div>`)
+  const [profileResult, kycResult, appsResult, creditsResult] = await Promise.allSettled([
+    api.userDetail(id),
+    api.kycStatusForUser(id),
+    api.applicationsByUser(id),
+    api.creditsByUser(id),
+  ])
+
+  if (profileResult.status === 'rejected') {
+    setBody(`<div class="error-box">${escapeHtml(profileResult.reason instanceof Error ? profileResult.reason.message : 'No se pudo cargar el cliente.')}</div>`)
+    return
+  }
+
+  const profile = profileResult.value
+  const kyc = kycResult.status === 'fulfilled' ? kycResult.value : null
+  const apps = appsResult.status === 'fulfilled' ? appsResult.value : []
+  const credits = creditsResult.status === 'fulfilled' ? creditsResult.value : []
+
+  setBody(`
+    <a href="#/clientes" class="back-link">← Volver a clientes</a>
+    <h1 class="page-title">${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}</h1>
+    <div class="detail-grid">
+      <div><strong>Email</strong>${escapeHtml(profile.email)}</div>
+      <div><strong>Teléfono</strong>${escapeHtml(profile.phone) || '—'}</div>
+      <div><strong>DNI</strong>${escapeHtml(profile.dni) || '—'}</div>
+      <div><strong>CUIL</strong>${escapeHtml(profile.cuil) || '—'}</div>
+      <div><strong>Ingreso declarado</strong>${profile.income ? money(profile.income) : '—'}</div>
+      <div><strong>Estado de cuenta</strong>${statusBadge(profile.status)}</div>
+      <div><strong>Cliente desde</strong>${dateFmt(profile.createdAt)}</div>
+      <div><strong>Verificación de identidad</strong>${kyc ? `<span class="status-badge status-${escapeHtml(kyc.status.toLowerCase())}">${escapeHtml(KYC_STATUS_LABEL[kyc.status] ?? kyc.status)}</span>` : '<span class="metric-sub">Sin iniciar</span>'}</div>
+    </div>
+
+    <div class="section-title">Solicitudes de crédito (${apps.length})</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Folio</th><th>Producto</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody>
+          ${
+            apps.length
+              ? apps
+                  .map((a) => `<tr><td><a href="#/solicitudes/${a.id}">${escapeHtml(a.publicId)}</a></td><td>${escapeHtml(a.product?.name)}</td><td>${money(a.amount)}</td><td>${statusBadge(a.status)}</td><td>${dateFmt(a.createdAt)}</td></tr>`)
+                  .join('')
+              : '<tr><td colspan="5" class="empty">Sin solicitudes.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-title">Créditos (${credits.length})</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Folio</th><th>Monto</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          ${
+            credits.length
+              ? credits
+                  .map((c) => `<tr><td>${escapeHtml(c.publicId)}</td><td>${money(c.amount)}</td><td>${money(c.balance)}</td><td>${statusBadge(c.status)}</td><td><a href="#/creditos/${c.id}">Ver cuotas →</a></td></tr>`)
+                  .join('')
+              : '<tr><td colspan="5" class="empty">Sin créditos.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+  `)
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -670,15 +814,18 @@ async function renderRoute() {
 
   const appMatch = hash.match(/^#\/solicitudes\/(.+)$/)
   const creditMatch = hash.match(/^#\/creditos\/(.+)$/)
+  const clientMatch = hash.match(/^#\/clientes\/(.+)$/)
 
   if (appMatch) await renderApplicationDetail(appMatch[1])
   else if (creditMatch) await renderCreditDetail(creditMatch[1])
+  else if (clientMatch) await renderClientDetail(clientMatch[1])
   else if (hash.startsWith('#/solicitudes')) await renderApplications()
   else if (hash.startsWith('#/creditos')) await renderCredits()
   else if (hash.startsWith('#/cobranzas')) await renderCollections()
   else if (hash.startsWith('#/tesoreria')) await renderTreasury()
   else if (hash.startsWith('#/auditoria')) await renderAudit()
   else if (hash.startsWith('#/usuarios')) await renderUsers()
+  else if (hash.startsWith('#/clientes')) await renderClients()
   else await renderDashboard()
 }
 

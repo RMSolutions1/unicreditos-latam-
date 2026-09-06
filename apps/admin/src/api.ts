@@ -1,4 +1,5 @@
 const IDENTITY_BASE = 'http://127.0.0.1:3100'
+const KYC_BASE = 'http://127.0.0.1:3101'
 const CREDIT_BASE = 'http://127.0.0.1:3102'
 const LEDGER_BASE = 'http://127.0.0.1:3104'
 const COLLECTION_BASE = 'http://127.0.0.1:3105'
@@ -22,8 +23,10 @@ async function request<T>(base: string, path: string, init: RequestInit = {}): P
   if (token) headers.set('Authorization', `Bearer ${token}`)
   const response = await fetch(`${base}${path}`, { ...init, headers })
   const text = await response.text()
-  const data = text ? JSON.parse(text) : {}
-  if (!response.ok) throw new Error((data as ApiError).message || 'No se pudo completar la operación.')
+  // Un body vacío (ej. GET /kyc/.../latest sin sesión) es "sin contenido", no "{}" -- importa para
+  // endpoints tipados como T | null (hallazgo de auditoría: rompía el render de la ficha de cliente).
+  const data = text ? JSON.parse(text) : null
+  if (!response.ok) throw new Error((data as ApiError | null)?.message || 'No se pudo completar la operación.')
   return data as T
 }
 
@@ -211,4 +214,9 @@ export const api = {
   },
   updateUser: (id: string, input: { role?: string; status?: string }) =>
     request<StaffUser>(IDENTITY_BASE, `/users/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  userDetail: (id: string) => request<StaffUser>(IDENTITY_BASE, `/users/${id}`),
+
+  kycStatusForUser: (userId: string) => request<{ id: string; provider: string; status: string; requestedAt: string; resolvedAt: string | null } | null>(KYC_BASE, `/kyc/users/${userId}/latest`),
+  applicationsByUser: (userId: string) => request<CreditApplication[]>(CREDIT_BASE, `/credit-applications/by-user/${userId}`),
+  creditsByUser: (userId: string) => request<Credit[]>(CREDIT_BASE, `/credits/all?userId=${userId}`),
 }
