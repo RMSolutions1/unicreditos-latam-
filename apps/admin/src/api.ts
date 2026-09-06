@@ -156,6 +156,30 @@ export type AuditLog = {
 
 export type AuditLogPage = { items: AuditLog[]; page: number; pageSize: number; total: number }
 
+export type Contract = {
+  id: string
+  applicationId: string
+  version: number
+  documentHash: string
+  acceptedAt: string
+  acceptedByUserId: string
+  ip: string | null
+  userAgent: string | null
+  createdAt: string
+  application: {
+    id: string
+    publicId: string
+    amount: string
+    months: number
+    status: string
+    user: { firstName: string; lastName: string; email: string }
+    product: { name: string }
+    credit: { id: string; publicId: string } | null
+  }
+}
+
+export type ContractPage = { items: Contract[]; page: number; pageSize: number; total: number }
+
 export type CollectionCase = {
   id: string
   creditId: string
@@ -215,6 +239,14 @@ export const api = {
   updateUser: (id: string, input: { role?: string; status?: string }) =>
     request<StaffUser>(IDENTITY_BASE, `/users/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
   userDetail: (id: string) => request<StaffUser>(IDENTITY_BASE, `/users/${id}`),
+
+  contracts: (params: { search?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.search) query.set('search', params.search)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<ContractPage>(CREDIT_BASE, `/contracts${qs ? `?${qs}` : ''}`)
+  },
 
   kycStatusForUser: (userId: string) => request<{ id: string; provider: string; status: string; requestedAt: string; resolvedAt: string | null } | null>(KYC_BASE, `/kyc/users/${userId}/latest`),
   applicationsByUser: (userId: string) => request<CreditApplication[]>(CREDIT_BASE, `/credit-applications/by-user/${userId}`),

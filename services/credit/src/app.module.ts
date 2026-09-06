@@ -6,6 +6,7 @@ import { PrismaModule } from './prisma/prisma.module'
 import { ProductsModule } from './products/products.module'
 import { ApplicationsModule } from './applications/applications.module'
 import { CreditsModule } from './credits/credits.module'
+import { ContractsModule } from './contracts/contracts.module'
 import { HealthModule } from './health/health.module'
 
 @Module({
@@ -16,6 +17,7 @@ import { HealthModule } from './health/health.module'
     ProductsModule,
     ApplicationsModule,
     CreditsModule,
+    ContractsModule,
     HealthModule,
   ],
   providers: [JwtStrategy],

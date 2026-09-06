@@ -1,5 +1,5 @@
 import './style.css'
-import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser, type StaffUser } from './api'
+import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Contract, type Credit, type CreditApplication, type SessionUser, type StaffUser } from './api'
 
 const KYC_STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pendiente',
@@ -70,6 +70,7 @@ const NAV_ITEMS = [
   { hash: '#/auditoria', label: 'Auditoría' },
   { hash: '#/usuarios', label: 'Usuarios' },
   { hash: '#/clientes', label: 'Clientes' },
+  { hash: '#/contratos', label: 'Contratos' },
 ]
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
@@ -798,6 +799,70 @@ async function renderClientDetail(id: string) {
 }
 
 // ---------------------------------------------------------------------------
+// Contratos
+// ---------------------------------------------------------------------------
+
+let contractsState = { search: '', page: 1 }
+
+function contractRow(c: Contract) {
+  return `
+    <tr>
+      <td>${escapeHtml(c.application.publicId)}</td>
+      <td>${escapeHtml(c.application.user ? `${c.application.user.firstName} ${c.application.user.lastName}` : c.application.id)}</td>
+      <td>${money(c.application.amount)} · ${c.application.months}m</td>
+      <td>${statusBadge(c.application.status)}</td>
+      <td>${dateFmt(c.acceptedAt)}</td>
+      <td>${c.application.credit ? `<a href="#/creditos/${c.application.credit.id}">${escapeHtml(c.application.credit.publicId)} →</a>` : '—'}</td>
+      <td><span class="metric-sub" title="${escapeHtml(c.documentHash)}">${escapeHtml(c.documentHash.slice(0, 12))}…</span></td>
+    </tr>
+  `
+}
+
+async function renderContracts() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.contracts({ search: contractsState.search || undefined, page: contractsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Contratos (${result.total})</h1>
+      <p class="note">Registro inmutable — un contrato se crea una única vez al aceptarlo, nunca se edita ni se borra.</p>
+      <form id="contracts-filter-form" class="page-header-row" style="gap:8px;">
+        <input id="contracts-search" placeholder="Buscar por folio o cliente" value="${escapeHtml(contractsState.search)}" style="max-width:280px;margin-bottom:0;" />
+        <button type="submit" style="width:auto;">Buscar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Solicitud</th><th>Cliente</th><th>Monto</th><th>Estado</th><th>Aceptado</th><th>Crédito</th><th>Hash</th></tr></thead>
+          <tbody>${result.items.length ? result.items.map(contractRow).join('') : '<tr><td colspan="7" class="empty">Sin contratos.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="contracts-prev" ${contractsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="contracts-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('contracts-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      contractsState = { search: (document.getElementById('contracts-search') as HTMLInputElement).value.trim(), page: 1 }
+      renderContracts()
+    })
+    document.getElementById('contracts-prev')?.addEventListener('click', () => {
+      contractsState = { ...contractsState, page: contractsState.page - 1 }
+      renderContracts()
+    })
+    document.getElementById('contracts-next')?.addEventListener('click', () => {
+      contractsState = { ...contractsState, page: contractsState.page + 1 }
+      renderContracts()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los contratos.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -826,6 +891,7 @@ async function renderRoute() {
   else if (hash.startsWith('#/auditoria')) await renderAudit()
   else if (hash.startsWith('#/usuarios')) await renderUsers()
   else if (hash.startsWith('#/clientes')) await renderClients()
+  else if (hash.startsWith('#/contratos')) await renderContracts()
   else await renderDashboard()
 }
 
