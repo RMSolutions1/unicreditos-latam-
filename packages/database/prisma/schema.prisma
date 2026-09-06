@@ -216,7 +216,8 @@ model Credit {
   createdAt     DateTime          @default(now()) @map("created_at")
   updatedAt     DateTime          @updatedAt @map("updated_at")
 
-  installments Installment[]
+  installments    Installment[]
+  collectionCases CollectionCase[]
 
   @@map("credits")
 }
@@ -420,4 +421,32 @@ model LedgerEntry {
   @@index([transactionId])
   @@index([accountId])
   @@map("ledger_entries")
+}
+
+// --- Collection Engine (Fase 6, docs/ROADMAP.md) --------------------------------------------
+// Subconjunto de los estados del master prompt §44. Cobranza responsable (§45): este modelo solo
+// guarda ESTADO y notas de gestión, nunca contenido de comunicaciones que pudieran ser hostigamiento.
+
+enum CollectionStatus {
+  CURRENT
+  GRACE_PERIOD
+  OVERDUE
+  INTENSIVE_COLLECTION
+  LEGAL_REVIEW
+  RECOVERED
+  DEFAULTED
+}
+
+model CollectionCase {
+  id             String           @id @default(cuid())
+  creditId       String           @map("credit_id")
+  credit         Credit           @relation(fields: [creditId], references: [id])
+  status         CollectionStatus @default(CURRENT)
+  maxDaysOverdue Int              @default(0) @map("max_days_overdue")
+  lastScanAt     DateTime         @default(now()) @map("last_scan_at")
+  openedAt       DateTime         @default(now()) @map("opened_at")
+  closedAt       DateTime?        @map("closed_at")
+
+  @@unique([creditId])
+  @@map("collection_cases")
 }

@@ -15,10 +15,35 @@ export class CreditsController {
 
   @Get(':id/installments')
   async installments(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const credit = await this.getOwnedCredit(id, request)
+    return this.prisma.client.installment.findMany({ where: { creditId: credit.id }, orderBy: { number: 'asc' } })
+  }
+
+  /**
+   * EarlySettlementService (master prompt §24): el pago anticipado cancela CAPITAL pendiente,
+   * nunca intereses futuros que todavía no se devengaron. Gracias a que Credit.balance
+   * representa capital puro (fix de Fase 6), la cotización es directa y no requiere recorrer
+   * cada cuota. Comisiones/descuentos quedan en ProductRules — hoy son 0, no un número inventado.
+   */
+  @Get(':id/early-settlement/quote')
+  async earlySettlementQuote(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
+    const credit = await this.getOwnedCredit(id, request)
+    const pendingInstallments = await this.prisma.client.installment.count({ where: { creditId: credit.id, status: { in: ['PENDING', 'PARTIALLY_PAID', 'OVERDUE'] } } })
+    return {
+      creditId: credit.id,
+      outstandingPrincipal: Number(credit.balance),
+      fees: 0,
+      totalPayoff: Number(credit.balance),
+      remainingInstallments: pendingInstallments,
+      note: 'La liquidación se paga hoy pagando individualmente las cuotas pendientes vía /payment-intents; un PaymentIntent de liquidación total en un solo pago queda pendiente (requiere que installmentId sea opcional en el Payment Engine).',
+    }
+  }
+
+  private async getOwnedCredit(id: string, request: AuthenticatedRequest) {
     const credit = await this.prisma.client.credit.findUnique({ where: { id } })
     if (!credit || (credit.userId !== request.user!.id && request.user!.role === 'CUSTOMER')) {
       throw new DomainError('NOT_FOUND', 'Crédito no encontrado.')
     }
-    return this.prisma.client.installment.findMany({ where: { creditId: id }, orderBy: { number: 'asc' } })
+    return credit
   }
 }

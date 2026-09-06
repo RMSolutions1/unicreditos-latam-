@@ -17,6 +17,7 @@
     "@unicreditos/auth": "0.1.0",
     "@unicreditos/database": "0.1.0",
     "@unicreditos/ledger": "0.1.0",
+    "@unicreditos/notifications": "0.1.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.14.2",
     "mercadopago": "^3.6.0",

@@ -6,6 +6,7 @@ import { MercadoPagoAdapter } from '../providers/mercadopago.adapter'
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
 import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
+import { notify } from '@unicreditos/notifications'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 type SessionContext = { ip?: string; userAgent?: string; requestId: string }
@@ -126,23 +127,31 @@ export class PaymentsService {
           const installmentStatus = newAmountPaid >= Number(intent.installment.totalDue) ? 'PAID' : 'PARTIALLY_PAID'
           await tx.installment.update({ where: { id: intent.installmentId }, data: { amountPaid: newAmountPaid, status: installmentStatus } })
 
-          const remainingBalance = Math.max(0, Number(intent.installment.credit.balance) - Number(intent.amount))
+          // Credit.balance representa CAPITAL pendiente, no "lo que falta cobrar" -- solo la
+          // porción de capital de este pago se descuenta, nunca el interés (hallazgo corregido
+          // antes de construir el pago anticipado en Fase 6, que necesita un capital exacto).
+          const totalDue = Number(intent.installment.totalDue)
+          const paidFraction = totalDue > 0 ? Number(intent.amount) / totalDue : 0
+          const principalPortion = Math.round(Number(intent.installment.principal) * paidFraction * 100) / 100
+          const interestPortion = Math.round((Number(intent.amount) - principalPortion) * 100) / 100
+
+          const remainingBalance = Math.max(0, Number(intent.installment.credit.balance) - principalPortion)
           const unpaidCount = await tx.installment.count({ where: { creditId: intent.installment.creditId, status: { not: 'PAID' } } })
           await tx.credit.update({
             where: { id: intent.installment.creditId },
             data: { balance: remainingBalance, status: unpaidCount === 0 ? 'PAID_OFF' : undefined },
           })
 
-          // Ledger de doble entrada (master prompt §39): el pago de cuota mueve fondos del
-          // cliente hacia TREASURY (disminuye lo que nos debe).
-          await postLedgerTransaction(tx, {
-            type: 'REPAYMENT',
-            reference: intent.id,
-            entries: [
-              { ownerType: 'CUSTOMER', ownerId: intent.userId, direction: 'CREDIT', amount: Number(intent.amount) },
-              { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'DEBIT', amount: Number(intent.amount) },
-            ],
-          })
+          // Ledger de doble entrada real (master prompt §39): el capital reduce lo que nos debe
+          // el cliente (cuenta CUSTOMER); el interés es ingreso reconocido (cuenta REVENUE).
+          // TREASURY recibe el efectivo completo. Débitos siempre == créditos.
+          const entries: Parameters<typeof postLedgerTransaction>[1]['entries'] = [
+            { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'DEBIT', amount: Number(intent.amount) },
+          ]
+          if (principalPortion > 0) entries.push({ ownerType: 'CUSTOMER', ownerId: intent.userId, direction: 'CREDIT', amount: principalPortion })
+          if (interestPortion > 0) entries.push({ ownerType: 'REVENUE', ownerId: GLOBAL_OWNER_ID, direction: 'CREDIT', amount: interestPortion })
+
+          await postLedgerTransaction(tx, { type: 'REPAYMENT', reference: intent.id, entries })
 
           await tx.auditLog.create({
             data: {
@@ -156,6 +165,19 @@ export class PaymentsService {
             },
           })
         })
+
+        // Fuera de la transacción: un fallo de email no debe revertir un pago ya acreditado.
+        const customer = await this.prisma.client.user.findUnique({ where: { id: intent.userId } })
+        if (customer) {
+          void notify({
+            type: 'PAYMENT_RECEIVED',
+            to: customer.email,
+            firstName: customer.firstName,
+            installmentNumber: intent.installment.number,
+            amount: Number(intent.amount),
+            creditPublicId: intent.installment.credit.publicId,
+          })
+        }
       }
     } else if (['rejected', 'cancelled'].includes(payment.status) && payment.externalReference) {
       await this.prisma.client.paymentIntent.updateMany({

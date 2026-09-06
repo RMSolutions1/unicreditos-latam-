@@ -48,9 +48,14 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] Backfill de ledger para los créditos desembolsados antes de esta fase (opcional, a decidir con el negocio).
 
 ## Fase 6 — Cobranzas y notificaciones
-- [ ] `CollectionService` con estados de mora y plantillas configurables (cobranza responsable, sin acoso).
-- [ ] `NotificationEngine` (email ya, SMS/WhatsApp cuando exista integración autorizada) sobre colas.
-- [ ] Pago parcial, pago anticipado (`EarlySettlementService` sobre `ProductRules`, sin reglas hardcodeadas), refinanciación.
+- [x] `CollectionService` (`services/collection`) con estados de mora calculados desde fechas de vencimiento reales — probado con un atraso simulado explícitamente (10 días), detectó `OVERDUE` correctamente y marcó la cuota vencida.
+- [x] `NotificationEngine` (`packages/notifications`): email real vía Resend, catálogo fijo de eventos (`CREDIT_DISBURSED`, `PAYMENT_RECEIVED`, `PAYMENT_OVERDUE`, `KYC_APPROVED`, `KYC_REJECTED`) conectado a desembolso, pago y mora. SMS/WhatsApp y colas quedan pendientes (sin Redis/BullMQ todavía).
+- [x] `EarlySettlementService` (cotización) en `services/credit`: `GET /credits/:id/early-settlement/quote` devuelve el capital pendiente real (no "lo que falta cobrar" con interés incluido — bug corregido en el camino, ver más abajo). Ejecutar la liquidación en un solo pago queda pendiente (requiere que `installmentId` sea opcional en `PaymentIntent`).
+- [ ] Pago parcial — el modelo ya lo soporta (`InstallmentStatus.PARTIALLY_PAID`) pero no se probó un caso real de punta a punta.
+- [ ] Refinanciación / reprogramación — no implementado.
+- [ ] Cron real para el scan de cobranza (hoy es manual bajo demanda) — pendiente de Redis/BullMQ.
+
+**Fix de correctness incluido**: `Credit.balance` se descontaba por el pago TOTAL (capital + interés) en cada cuota pagada, no solo por el capital — inflaba la velocidad de amortización y hubiera dado una cotización de pago anticipado incorrecta. Se corrigió en `services/payment` para descontar solo la porción de capital, y el ledger ahora reconoce el interés como ingreso en una cuenta `REVENUE` separada (antes iba todo a la cuenta del cliente).
 
 ## Fase 7 — Investor Portal (bloqueado hasta validación legal, ver SECURITY.md §1)
 - [ ] Modelo de datos y ledger de inversión ya soportan esto (Fase 5); UI e API se activan solo con `ENABLE_INVESTOR_MODULE=true` y sign-off legal.

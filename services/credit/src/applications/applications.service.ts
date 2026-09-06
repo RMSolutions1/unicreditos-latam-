@@ -7,6 +7,7 @@ import { DecisionEngineService, DECISION_RULES_VERSION, type Decision } from '..
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
 import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
+import { notify } from '@unicreditos/notifications'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 const FIRST_CREDIT_HARD_CAP = 400_000
@@ -266,6 +267,13 @@ export class ApplicationsService {
     })
 
     await this.audit({ actorId: treasury.id, actorRole: treasury.role, action: 'CREDIT_DISBURSED', resource: 'credit', resourceId: credit.id, after: { amount: credit.amount, disbursedTo: credit.disbursedTo }, ctx })
+
+    // Notificación fuera de la transacción de DB: un fallo de email nunca debe revertir un desembolso ya confirmado.
+    const customer = await this.prisma.client.user.findUnique({ where: { id: application.userId } })
+    if (customer) {
+      void notify({ type: 'CREDIT_DISBURSED', to: customer.email, firstName: customer.firstName, publicId: credit.publicId, amount: Number(credit.amount), disbursedTo: credit.disbursedTo ?? '' })
+    }
+
     return this.prisma.client.credit.findUnique({ where: { id: credit.id }, include: { installments: true } })
   }
 }
