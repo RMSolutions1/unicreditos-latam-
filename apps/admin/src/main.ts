@@ -1,5 +1,5 @@
 import './style.css'
-import { api, getToken, setToken, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser } from './api'
+import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser, type StaffUser } from './api'
 
 const root = document.getElementById('app')!
 
@@ -40,6 +40,9 @@ const STATUS_LABEL: Record<string, string> = {
   LEGAL_REVIEW: 'Revisión legal',
   RECOVERED: 'Recuperado',
   DEFAULTED: 'Incobrable',
+  PENDING: 'Pendiente',
+  SUSPENDED: 'Suspendido',
+  BLOCKED: 'Bloqueado',
 }
 
 function statusBadge(status: string) {
@@ -57,6 +60,7 @@ const NAV_ITEMS = [
   { hash: '#/cobranzas', label: 'Cobranzas' },
   { hash: '#/tesoreria', label: 'Tesorería' },
   { hash: '#/auditoria', label: 'Auditoría' },
+  { hash: '#/usuarios', label: 'Usuarios' },
 ]
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
@@ -560,6 +564,96 @@ async function renderAudit() {
 }
 
 // ---------------------------------------------------------------------------
+// Usuarios
+// ---------------------------------------------------------------------------
+
+let usersState = { role: '', status: '', search: '', page: 1 }
+
+function userRow(u: StaffUser, canEdit: boolean) {
+  const roleOptions = ROLES.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')
+  const statusOptions = USER_STATUSES.map((s) => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${STATUS_LABEL[s] ?? s}</option>`).join('')
+  return `
+    <tr data-user-row="${u.id}">
+      <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
+      <td>${escapeHtml(u.email)}</td>
+      <td>${canEdit ? `<select data-role="${u.id}">${roleOptions}</select>` : `<span class="badge">${escapeHtml(u.role)}</span>`}</td>
+      <td>${canEdit ? `<select data-status="${u.id}">${statusOptions}</select>` : statusBadge(u.status)}</td>
+      <td>${dateFmt(u.createdAt)}</td>
+      <td>${canEdit ? `<button class="small auto" data-save="${u.id}">Guardar</button>` : '—'}</td>
+    </tr>
+  `
+}
+
+async function renderUsers() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const [me, result] = await Promise.all([
+      api.me(),
+      api.users({ role: usersState.role || undefined, status: usersState.status || undefined, search: usersState.search || undefined, page: usersState.page }),
+    ])
+    const canEdit = me.role === 'SUPER_ADMIN'
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Usuarios (${result.total})</h1>
+      ${!canEdit ? '<p class="note">Solo SUPER_ADMIN puede cambiar rol o estado de una cuenta — vista de solo lectura.</p>' : ''}
+      <form id="users-filter-form" class="page-header-row" style="gap:8px;flex-wrap:wrap;">
+        <input id="users-search" placeholder="Buscar por nombre, email o DNI" value="${escapeHtml(usersState.search)}" style="max-width:240px;margin-bottom:0;" />
+        <select id="users-role" style="max-width:200px;margin-bottom:0;">
+          <option value="">Todos los roles</option>
+          ${ROLES.map((r) => `<option value="${r}" ${r === usersState.role ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>
+        <select id="users-status" style="max-width:180px;margin-bottom:0;">
+          <option value="">Todos los estados</option>
+          ${USER_STATUSES.map((s) => `<option value="${s}" ${s === usersState.status ? 'selected' : ''}>${STATUS_LABEL[s] ?? s}</option>`).join('')}
+        </select>
+        <button type="submit" style="width:auto;">Filtrar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Creado</th><th></th></tr></thead>
+          <tbody>${result.items.length ? result.items.map((u) => userRow(u, canEdit)).join('') : '<tr><td colspan="6" class="empty">Sin resultados.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="users-prev" ${usersState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="users-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('users-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      usersState = {
+        role: (document.getElementById('users-role') as HTMLSelectElement).value,
+        status: (document.getElementById('users-status') as HTMLSelectElement).value,
+        search: (document.getElementById('users-search') as HTMLInputElement).value.trim(),
+        page: 1,
+      }
+      renderUsers()
+    })
+    document.getElementById('users-prev')?.addEventListener('click', () => {
+      usersState = { ...usersState, page: usersState.page - 1 }
+      renderUsers()
+    })
+    document.getElementById('users-next')?.addEventListener('click', () => {
+      usersState = { ...usersState, page: usersState.page + 1 }
+      renderUsers()
+    })
+    document.querySelectorAll<HTMLButtonElement>('[data-save]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.save!
+        const role = (document.querySelector(`[data-role="${id}"]`) as HTMLSelectElement).value
+        const status = (document.querySelector(`[data-status="${id}"]`) as HTMLSelectElement).value
+        runAction(btn, () => api.updateUser(id, { role, status }), renderUsers)
+      }),
+    )
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -584,6 +678,7 @@ async function renderRoute() {
   else if (hash.startsWith('#/cobranzas')) await renderCollections()
   else if (hash.startsWith('#/tesoreria')) await renderTreasury()
   else if (hash.startsWith('#/auditoria')) await renderAudit()
+  else if (hash.startsWith('#/usuarios')) await renderUsers()
   else await renderDashboard()
 }
 

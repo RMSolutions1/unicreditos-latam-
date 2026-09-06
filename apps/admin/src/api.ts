@@ -99,6 +99,43 @@ export type Reconciliation = {
   allMatch: boolean
 }
 
+export type StaffUser = {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  dni: string | null
+  cuil: string | null
+  income: number | null
+  role: string
+  status: string
+  mfaEnabled: boolean
+  createdAt: string
+}
+
+export type StaffUserPage = { items: StaffUser[]; page: number; pageSize: number; total: number }
+
+export const ROLES = [
+  'SUPER_ADMIN',
+  'CEO',
+  'CFO',
+  'CTO',
+  'RISK_MANAGER',
+  'COMPLIANCE_MANAGER',
+  'TREASURY_MANAGER',
+  'COLLECTION_MANAGER',
+  'OPERATIONS_MANAGER',
+  'SUPPORT',
+  'AUDITOR',
+  'ANALYST',
+  'MERCHANT_ADMIN',
+  'CUSTOMER',
+  'INVESTOR',
+] as const
+
+export const USER_STATUSES = ['ACTIVE', 'PENDING', 'SUSPENDED', 'BLOCKED'] as const
+
 export type AuditLog = {
   id: string
   actorId: string | null
@@ -162,4 +199,16 @@ export const api = {
     const qs = query.toString()
     return request<AuditLogPage>(IDENTITY_BASE, `/audit-logs${qs ? `?${qs}` : ''}`)
   },
+
+  users: (params: { role?: string; status?: string; search?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.role) query.set('role', params.role)
+    if (params.status) query.set('status', params.status)
+    if (params.search) query.set('search', params.search)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<StaffUserPage>(IDENTITY_BASE, `/users${qs ? `?${qs}` : ''}`)
+  },
+  updateUser: (id: string, input: { role?: string; status?: string }) =>
+    request<StaffUser>(IDENTITY_BASE, `/users/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 }
