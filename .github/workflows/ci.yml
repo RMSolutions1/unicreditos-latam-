@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    # prisma generate solo necesita parsear schema.prisma -- no se conecta a la base real.
+    # Nunca se usa una credencial real de Supabase en CI.
+    env:
+      DATABASE_URL: postgresql://ci:ci@localhost:5432/ci
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Instalar dependencias del monorepo
+        run: npm ci
+
+      - name: Generar cliente de Prisma
+        run: npm run generate --workspace packages/database
+
+      - name: Build de paquetes compartidos
+        run: |
+          npm run build --workspace packages/database
+          npm run build --workspace packages/auth
+          npm run build --workspace packages/ledger
+          npm run build --workspace packages/notifications
+
+      - name: Build de servicios
+        run: |
+          npm run build --workspace services/identity
+          npm run build --workspace services/kyc
+          npm run build --workspace services/credit
+          npm run build --workspace services/payment
+          npm run build --workspace services/ledger
+          npm run build --workspace services/collection
+
+      - name: Typecheck de apps/admin
+        run: npx tsc --noEmit -p apps/admin/tsconfig.json
+
+      - name: Tests unitarios
+        run: |
+          npm test --workspace services/credit
+          npm test --workspace services/payment
+          npm test --workspace packages/ledger
