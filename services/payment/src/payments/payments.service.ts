@@ -7,6 +7,7 @@ import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
 import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
 import { notify } from '@unicreditos/notifications'
+import { splitPrincipalAndInterest } from './principal-interest-split'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 type SessionContext = { ip?: string; userAgent?: string; requestId: string }
@@ -141,10 +142,11 @@ export class PaymentsService {
           // Credit.balance representa CAPITAL pendiente, no "lo que falta cobrar" -- solo la
           // porción de capital de este pago se descuenta, nunca el interés (hallazgo corregido
           // antes de construir el pago anticipado en Fase 6, que necesita un capital exacto).
-          const totalDue = Number(intent.installment.totalDue)
-          const paidFraction = totalDue > 0 ? Number(intent.amount) / totalDue : 0
-          const principalPortion = Math.round(Number(intent.installment.principal) * paidFraction * 100) / 100
-          const interestPortion = Math.round((Number(intent.amount) - principalPortion) * 100) / 100
+          const { principalPortion, interestPortion } = splitPrincipalAndInterest(
+            Number(intent.amount),
+            Number(intent.installment.principal),
+            Number(intent.installment.totalDue),
+          )
 
           const remainingBalance = Math.max(0, Number(intent.installment.credit.balance) - principalPortion)
           const unpaidCount = await tx.installment.count({ where: { creditId: intent.installment.creditId, status: { not: 'PAID' } } })

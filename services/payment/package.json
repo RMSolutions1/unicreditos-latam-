@@ -6,7 +6,8 @@
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
     "start": "node dist/main.js",
-    "start:dev": "tsc -p tsconfig.build.json --watch"
+    "start:dev": "tsc -p tsconfig.build.json --watch",
+    "test": "jest"
   },
   "dependencies": {
     "@nestjs/common": "^11.1.6",
@@ -28,7 +29,10 @@
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
+    "@types/jest": "^30.0.0",
     "@types/node": "^24.10.1",
+    "jest": "^30.5.1",
+    "ts-jest": "^29.4.12",
     "typescript": "~6.0.2"
   }
 }
