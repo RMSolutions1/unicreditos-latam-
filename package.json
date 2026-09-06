@@ -3,6 +3,11 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "workspaces": [
+    "packages/*",
+    "services/*",
+    "apps/*"
+  ],
   "scripts": {
     "dev": "concurrently -n api,web -c cyan,magenta \"tsx server/index.ts\" \"vite\"",
     "dev:web": "vite",

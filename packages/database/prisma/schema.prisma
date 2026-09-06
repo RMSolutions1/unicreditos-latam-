@@ -1,0 +1,452 @@
+// UNICRÉDITOS — esquema Fase 1 (identidad, RBAC, auditoría).
+// Los dominios de credito/pagos/ledger se agregan en fases siguientes (ver docs/DATABASE.md).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  SUPER_ADMIN
+  CEO
+  CFO
+  CTO
+  RISK_MANAGER
+  COMPLIANCE_MANAGER
+  TREASURY_MANAGER
+  COLLECTION_MANAGER
+  OPERATIONS_MANAGER
+  SUPPORT
+  AUDITOR
+  ANALYST
+  MERCHANT_ADMIN
+  CUSTOMER
+  INVESTOR
+}
+
+enum UserStatus {
+  ACTIVE
+  PENDING
+  SUSPENDED
+  BLOCKED
+}
+
+model User {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  phone        String?
+  passwordHash String     @map("password_hash")
+  mfaEnabled   Boolean    @default(false) @map("mfa_enabled")
+  mfaSecret    String?    @map("mfa_secret")
+  role         Role       @default(CUSTOMER)
+  status       UserStatus @default(ACTIVE)
+  firstName    String     @map("first_name")
+  lastName     String     @map("last_name")
+  dni          String?
+  cuil         String?
+  income       Decimal?   @db.Decimal(14, 2)
+  lastLoginAt  DateTime?  @map("last_login_at")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @updatedAt @map("updated_at")
+  deletedAt DateTime? @map("deleted_at")
+
+  refreshTokens             RefreshToken[]
+  auditLogs                 AuditLog[]
+  kycVerifications          KycVerification[]
+  bankAccountVerifications  BankAccountVerification[]
+  creditApplications        CreditApplication[]
+
+  @@map("users")
+}
+
+enum KycStatus {
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// El resultado crudo del proveedor nunca se guarda en claro (docs/SECURITY.md §4 — minimización
+// y cifrado de datos sensibles). `normalizedResult` guarda solo lo mínimo necesario para la UI.
+model KycVerification {
+  id                 String    @id @default(cuid())
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider           String    @default("didit")
+  providerSessionId  String    @map("provider_session_id")
+  status             KycStatus @default(PENDING)
+  normalizedResult   Json?     @map("normalized_result")
+  rawResultEncrypted Bytes?    @map("raw_result_encrypted")
+  requestedAt        DateTime  @default(now()) @map("requested_at")
+  resolvedAt         DateTime? @map("resolved_at")
+
+  @@unique([provider, providerSessionId])
+  @@index([userId])
+  @@map("kyc_verifications")
+}
+
+enum BankMatchStatus {
+  PENDING
+  VERIFIED
+  MISMATCH
+  REJECTED
+  ERROR
+}
+
+model BankAccountVerification {
+  id           String           @id @default(cuid())
+  userId       String           @map("user_id")
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String           @default("argenapi")
+  cbuOrAlias   String           @map("cbu_or_alias")
+  holderName   String?          @map("holder_name")
+  holderCuit   String?          @map("holder_cuit")
+  matchStatus  BankMatchStatus  @default(PENDING) @map("match_status")
+  requestId    String           @map("request_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("bank_account_verifications")
+}
+
+// --- Credit Engine (Fase 3, docs/ROADMAP.md) ------------------------------------------------
+
+model CreditProduct {
+  id            String   @id
+  name          String
+  monthlyRate   Decimal  @db.Decimal(6, 3) @map("monthly_rate") // TEM en % (7.5 = 7,5%)
+  minAmount     Decimal  @db.Decimal(14, 2) @map("min_amount")
+  maxAmount     Decimal  @db.Decimal(14, 2) @map("max_amount")
+  minTermMonths Int      @map("min_term_months")
+  maxTermMonths Int      @map("max_term_months")
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  applications CreditApplication[]
+
+  @@map("credit_products")
+}
+
+// Subconjunto de los 19 estados del master prompt (§11) — el resto (VERIFICATION,
+// COMPLIANCE_REVIEW, TREASURY_REVIEW, ACTIVE, OVERDUE, IN_COLLECTION, RESTRUCTURED, PAID,
+// DEFAULTED, CLOSED) se incorpora en las fases de KYC-crédito, cobranza y ledger.
+enum ApplicationStatus {
+  SUBMITTED
+  PRE_APPROVED
+  MANUAL_REVIEW
+  APPROVED
+  REJECTED
+  READY_FOR_DISBURSEMENT
+  DISBURSED
+  CANCELLED
+}
+
+model CreditApplication {
+  id             String            @id @default(cuid())
+  publicId       String            @unique @map("public_id")
+  userId         String            @map("user_id")
+  user           User              @relation(fields: [userId], references: [id])
+  productId      String            @map("product_id")
+  product        CreditProduct     @relation(fields: [productId], references: [id])
+  amount         Decimal           @db.Decimal(14, 2)
+  months         Int
+  monthlyPayment Decimal           @db.Decimal(14, 2) @map("monthly_payment")
+  tna            Decimal           @db.Decimal(6, 3)
+  tea            Decimal           @db.Decimal(6, 3)
+  cft            Decimal           @db.Decimal(6, 3)
+  status         ApplicationStatus @default(SUBMITTED)
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  decisions CreditDecision[]
+  contract  Contract?
+  credit    Credit?
+
+  @@index([userId])
+  @@map("credit_applications")
+}
+
+// Toda decisión es auditable e inmutable (master prompt §32/37): una nueva revisión agrega
+// una fila nueva, nunca se sobrescribe una anterior.
+model CreditDecision {
+  id            String            @id @default(cuid())
+  applicationId String            @map("application_id")
+  application   CreditApplication @relation(fields: [applicationId], references: [id])
+  decision      String // APPROVE | PRE_APPROVE | MANUAL_REVIEW | REJECT | APPROVED_BY_REVIEWER | REJECTED_BY_REVIEWER
+  riskScore     Int               @map("risk_score")
+  riskLevel     String            @map("risk_level") // LOW | MEDIUM | HIGH | CRITICAL | MANUAL_REVIEW
+  modelVersion  String            @map("model_version")
+  rulesVersion  String            @map("rules_version")
+  inputs        Json
+  result        Json
+  decidedBy     String            @map("decided_by") // userId o "system"
+  decidedAt     DateTime          @default(now()) @map("decided_at")
+
+  @@index([applicationId])
+  @@map("credit_decisions")
+}
+
+enum CreditStatus {
+  ACTIVE
+  PAID_OFF
+}
+
+model Credit {
+  id            String            @id @default(cuid())
+  publicId      String            @unique @map("public_id")
+  applicationId String            @unique @map("application_id")
+  application   CreditApplication @relation(fields: [applicationId], references: [id])
+  userId        String            @map("user_id")
+  productId     String            @map("product_id")
+  amount        Decimal           @db.Decimal(14, 2)
+  balance       Decimal           @db.Decimal(14, 2)
+  months        Int
+  monthlyPayment Decimal          @db.Decimal(14, 2) @map("monthly_payment")
+  tna           Decimal           @db.Decimal(6, 3)
+  status        CreditStatus      @default(ACTIVE)
+  disbursedTo   String?           @map("disbursed_to")
+  disbursedBy   String            @map("disbursed_by") // userId del TREASURY_MANAGER (segregación de funciones)
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
+
+  installments    Installment[]
+  collectionCases CollectionCase[]
+
+  @@map("credits")
+}
+
+enum InstallmentStatus {
+  PENDING
+  PARTIALLY_PAID
+  PAID
+  OVERDUE
+  CANCELLED
+}
+
+model Installment {
+  id         String            @id @default(cuid())
+  creditId   String            @map("credit_id")
+  credit     Credit            @relation(fields: [creditId], references: [id])
+  number     Int
+  dueDate    DateTime          @map("due_date")
+  principal  Decimal           @db.Decimal(14, 2)
+  interest   Decimal           @db.Decimal(14, 2)
+  totalDue   Decimal           @db.Decimal(14, 2) @map("total_due")
+  amountPaid Decimal           @default(0) @db.Decimal(14, 2) @map("amount_paid")
+  status     InstallmentStatus @default(PENDING)
+
+  paymentIntents PaymentIntent[]
+
+  @@unique([creditId, number])
+  @@index([creditId])
+  @@map("installments")
+}
+
+// Nunca se sobrescribe un contrato (master prompt §37): "aceptar" crea el registro una sola vez.
+model Contract {
+  id               String            @id @default(cuid())
+  applicationId    String            @unique @map("application_id")
+  application      CreditApplication @relation(fields: [applicationId], references: [id])
+  version          Int               @default(1)
+  documentHash     String            @map("document_hash")
+  acceptedAt       DateTime          @map("accepted_at")
+  acceptedByUserId String            @map("accepted_by_user_id")
+  ip               String?
+  userAgent        String?           @map("user_agent")
+  createdAt        DateTime          @default(now()) @map("created_at")
+
+  @@map("contracts")
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  userId     String    @map("user_id")
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique @map("token_hash")
+  familyId   String    @map("family_id")
+  expiresAt  DateTime  @map("expires_at")
+  revokedAt  DateTime? @map("revoked_at")
+  replacedBy String?   @map("replaced_by")
+  ip         String?
+  userAgent  String?   @map("user_agent")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([familyId])
+  @@map("refresh_tokens")
+}
+
+// Append-only por diseño: sin updatedAt/deletedAt, sin endpoint DELETE (ver docs/SECURITY.md §9).
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?  @map("actor_id")
+  actor      User?    @relation(fields: [actorId], references: [id])
+  actorRole  String   @map("actor_role")
+  action     String
+  resource   String
+  resourceId String   @map("resource_id")
+  before     Json?
+  after      Json?
+  ip         String?
+  device     String?
+  requestId  String   @map("request_id")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  @@index([resource, resourceId])
+  @@index([actorId])
+  @@map("audit_logs")
+}
+
+// --- Payment Engine (Fase 4, docs/ROADMAP.md) -----------------------------------------------
+// Regla dura (master prompt §14/19/94): Loan -> Installment -> PaymentIntent -> PaymentRouter ->
+// ProviderAdapter -> PaymentProvider. El estado final SIEMPRE viene del webhook firmado del
+// proveedor, nunca de que el usuario "vuelva" del checkout.
+
+enum PaymentIntentStatus {
+  CREATED
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model PaymentIntent {
+  id                String              @id @default(cuid())
+  userId            String              @map("user_id")
+  installmentId     String              @map("installment_id")
+  installment       Installment         @relation(fields: [installmentId], references: [id])
+  amount            Decimal             @db.Decimal(14, 2)
+  currency          String              @default("ARS")
+  provider          String // "mercadopago" | "astropay" (deshabilitado, ver PaymentRouterService)
+  status            PaymentIntentStatus @default(CREATED)
+  externalReference String              @unique @map("external_reference")
+  idempotencyKey    String              @unique @map("idempotency_key")
+  providerPaymentId String?             @map("provider_payment_id")
+  createdAt         DateTime            @default(now()) @map("created_at")
+  updatedAt         DateTime            @updatedAt @map("updated_at")
+
+  @@index([userId])
+  @@index([installmentId])
+  @@map("payment_intents")
+}
+
+// Idempotencia dura a nivel DB (master prompt §20): el unique constraint es lo que impide
+// procesar dos veces el mismo evento aunque el proveedor reintente el webhook.
+model WebhookEvent {
+  id              String    @id @default(cuid())
+  provider        String
+  providerEventId String    @map("provider_event_id")
+  signatureValid  Boolean   @map("signature_valid")
+  payload         Json
+  processedAt     DateTime? @map("processed_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@unique([provider, providerEventId])
+  @@map("webhook_events")
+}
+
+// --- Ledger (Fase 5, docs/ROADMAP.md) -----------------------------------------------------
+// Regla dura (master prompt §39): "NO utilizar balance = balance + amount. Utilizar ledger."
+// Cada movimiento de dinero real (desembolso, pago de cuota) crea una LedgerTransaction
+// balanceada (suma de débitos == suma de créditos) con sus LedgerEntry — append-only, sin
+// updatedAt/deletedAt y sin endpoint de borrado. `Credit.balance` sigue existiendo como valor
+// cacheado para lecturas rápidas, pero el ledger es la fuente de verdad recalculable
+// (ver GET /ledger/accounts/:id/balance en services/ledger).
+
+enum LedgerOwnerType {
+  CUSTOMER
+  TREASURY
+  REVENUE
+}
+
+model LedgerAccount {
+  id       String          @id @default(cuid())
+  ownerType LedgerOwnerType @map("owner_type")
+  ownerId  String          @map("owner_id") // userId si ownerType = CUSTOMER; "GLOBAL" para TREASURY/REVENUE (cuentas únicas globales).
+  // No se usa NULL: Postgres no garantiza unicidad entre NULLs en un UNIQUE constraint, lo que
+  // permitiría cuentas TREASURY/REVENUE duplicadas.
+  currency String          @default("ARS")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  entries LedgerEntry[]
+
+  @@unique([ownerType, ownerId, currency])
+  @@map("ledger_accounts")
+}
+
+enum LedgerTransactionType {
+  DISBURSEMENT
+  REPAYMENT
+  REFUND
+  ADJUSTMENT
+}
+
+model LedgerTransaction {
+  id        String                @id @default(cuid())
+  type      LedgerTransactionType
+  reference String // creditId, paymentIntentId, etc.
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  entries LedgerEntry[]
+
+  @@index([reference])
+  @@map("ledger_transactions")
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+model LedgerEntry {
+  id            String            @id @default(cuid())
+  transactionId String            @map("transaction_id")
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id])
+  accountId     String            @map("account_id")
+  account       LedgerAccount     @relation(fields: [accountId], references: [id])
+  direction     LedgerDirection
+  amount        Decimal           @db.Decimal(14, 2)
+  currency      String            @default("ARS")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  // Append-only: sin updatedAt/deletedAt. Una corrección es un ADJUSTMENT nuevo, nunca un update.
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@map("ledger_entries")
+}
+
+// --- Collection Engine (Fase 6, docs/ROADMAP.md) --------------------------------------------
+// Subconjunto de los estados del master prompt §44. Cobranza responsable (§45): este modelo solo
+// guarda ESTADO y notas de gestión, nunca contenido de comunicaciones que pudieran ser hostigamiento.
+
+enum CollectionStatus {
+  CURRENT
+  GRACE_PERIOD
+  OVERDUE
+  INTENSIVE_COLLECTION
+  LEGAL_REVIEW
+  RECOVERED
+  DEFAULTED
+}
+
+model CollectionCase {
+  id             String           @id @default(cuid())
+  creditId       String           @map("credit_id")
+  credit         Credit           @relation(fields: [creditId], references: [id])
+  status         CollectionStatus @default(CURRENT)
+  maxDaysOverdue Int              @default(0) @map("max_days_overdue")
+  lastScanAt     DateTime         @default(now()) @map("last_scan_at")
+  openedAt       DateTime         @default(now()) @map("opened_at")
+  closedAt       DateTime?        @map("closed_at")
+
+  @@unique([creditId])
+  @@map("collection_cases")
+}
