@@ -16,7 +16,7 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] MFA TOTP para roles de admin.
 - [ ] Rate limiting de `identity` respaldado en Redis (hoy es un placeholder en memoria).
 - [ ] Tests automatizados (unit + e2e) de `identity`.
-- [ ] CI mínimo: lint + typecheck + unit tests en cada push.
+- [x] CI mínimo en GitHub Actions (`.github/workflows/ci.yml`): build de todos los paquetes/servicios, typecheck de `apps/admin` y los 28 tests unitarios en cada push/PR a `main` — corrido real verificado en verde ([run 34034756872](https://github.com/RMSolutions1/unicreditos-latam-/actions/runs/34034756872)). Lint queda pendiente (no hay ESLint configurado todavía).
 
 ## Fase 2 — Identidad del cliente y KYC
 - [x] `services/kyc` + `DiditAdapter` — probado contra la API real de Didit (sin mocks).
