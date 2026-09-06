@@ -7,12 +7,15 @@ responsive + accesibilidad + seguridad + observabilidad).
 
 ## Fase 1 — Fundaciones (en curso)
 - [x] Análisis, árbol de directorios, documentación base (este set de docs).
-- [ ] Monorepo (pnpm workspaces o Turborepo) con `/apps` `/services` `/packages`.
-- [ ] `packages/database`: `schema.prisma` inicial (identidad + RBAC + audit) + migraciones.
-- [ ] `services/identity`: registro, login, refresh tokens, MFA TOTP, RBAC guards.
+- [x] Monorepo (npm workspaces) con `/apps` `/services` `/packages`.
+- [x] `packages/database`: `schema.prisma` inicial (identidad + RBAC + audit) + migración `init` aplicada.
+- [x] `services/identity`: registro, login, refresh tokens rotativos con detección de reuso, RBAC guards — probado de punta a punta contra Postgres real. MFA TOTP queda pendiente (ver abajo).
+- [x] `AuditLog` funcionando de punta a punta en `identity` (primer servicio que audita).
+- [x] Logs JSON estructurados en `identity` (`JsonLogger`); OpenTelemetry queda para cuando haya más de un servicio corriendo.
 - [ ] `packages/ui`: design system base (tokens de `docs/ARCHITECTURE.md` §paleta) + componentes core.
-- [ ] `packages/logging`: logs JSON estructurados + OpenTelemetry.
-- [ ] `AuditLog` funcionando de punta a punta en `identity` (primer servicio que audita).
+- [ ] MFA TOTP para roles de admin.
+- [ ] Rate limiting de `identity` respaldado en Redis (hoy es un placeholder en memoria).
+- [ ] Tests automatizados (unit + e2e) de `identity`.
 - [ ] CI mínimo: lint + typecheck + unit tests en cada push.
 
 ## Fase 2 — Identidad del cliente y KYC

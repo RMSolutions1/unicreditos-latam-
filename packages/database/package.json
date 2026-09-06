@@ -1,0 +1,26 @@
+{
+  "name": "@unicreditos/database",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "dist/client.js",
+  "types": "dist/client.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "generate": "prisma generate",
+    "migrate:dev": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "studio": "prisma studio",
+    "seed": "tsx src/seed.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "argon2": "^0.44.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "prisma": "^6.5.0",
+    "tsx": "^4.23.12",
+    "typescript": "~6.0.2"
+  }
+}
