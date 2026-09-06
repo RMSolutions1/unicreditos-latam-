@@ -6,6 +6,7 @@ import { RiskEngineService } from '../risk/risk-engine.service'
 import { DecisionEngineService, DECISION_RULES_VERSION, type Decision } from '../risk/decision-engine.service'
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
+import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 const FIRST_CREDIT_HARD_CAP = 400_000
@@ -249,6 +250,18 @@ export class ApplicationsService {
         })),
       })
       await tx.creditApplication.update({ where: { id: application.id }, data: { status: 'DISBURSED' } })
+
+      // Ledger de doble entrada (master prompt §39): nunca "balance = balance + amount".
+      // El desembolso mueve fondos de TREASURY hacia el cliente (aumenta lo que nos debe).
+      await postLedgerTransaction(tx, {
+        type: 'DISBURSEMENT',
+        reference: created.id,
+        entries: [
+          { ownerType: 'CUSTOMER', ownerId: application.userId, direction: 'DEBIT', amount: Number(application.amount) },
+          { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'CREDIT', amount: Number(application.amount) },
+        ],
+      })
+
       return created
     })
 

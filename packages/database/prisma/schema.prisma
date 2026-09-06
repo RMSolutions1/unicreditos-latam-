@@ -351,3 +351,73 @@ model WebhookEvent {
   @@unique([provider, providerEventId])
   @@map("webhook_events")
 }
+
+// --- Ledger (Fase 5, docs/ROADMAP.md) -----------------------------------------------------
+// Regla dura (master prompt §39): "NO utilizar balance = balance + amount. Utilizar ledger."
+// Cada movimiento de dinero real (desembolso, pago de cuota) crea una LedgerTransaction
+// balanceada (suma de débitos == suma de créditos) con sus LedgerEntry — append-only, sin
+// updatedAt/deletedAt y sin endpoint de borrado. `Credit.balance` sigue existiendo como valor
+// cacheado para lecturas rápidas, pero el ledger es la fuente de verdad recalculable
+// (ver GET /ledger/accounts/:id/balance en services/ledger).
+
+enum LedgerOwnerType {
+  CUSTOMER
+  TREASURY
+  REVENUE
+}
+
+model LedgerAccount {
+  id       String          @id @default(cuid())
+  ownerType LedgerOwnerType @map("owner_type")
+  ownerId  String          @map("owner_id") // userId si ownerType = CUSTOMER; "GLOBAL" para TREASURY/REVENUE (cuentas únicas globales).
+  // No se usa NULL: Postgres no garantiza unicidad entre NULLs en un UNIQUE constraint, lo que
+  // permitiría cuentas TREASURY/REVENUE duplicadas.
+  currency String          @default("ARS")
+  createdAt DateTime       @default(now()) @map("created_at")
+
+  entries LedgerEntry[]
+
+  @@unique([ownerType, ownerId, currency])
+  @@map("ledger_accounts")
+}
+
+enum LedgerTransactionType {
+  DISBURSEMENT
+  REPAYMENT
+  REFUND
+  ADJUSTMENT
+}
+
+model LedgerTransaction {
+  id        String                @id @default(cuid())
+  type      LedgerTransactionType
+  reference String // creditId, paymentIntentId, etc.
+  createdAt DateTime              @default(now()) @map("created_at")
+
+  entries LedgerEntry[]
+
+  @@index([reference])
+  @@map("ledger_transactions")
+}
+
+enum LedgerDirection {
+  DEBIT
+  CREDIT
+}
+
+model LedgerEntry {
+  id            String            @id @default(cuid())
+  transactionId String            @map("transaction_id")
+  transaction   LedgerTransaction @relation(fields: [transactionId], references: [id])
+  accountId     String            @map("account_id")
+  account       LedgerAccount     @relation(fields: [accountId], references: [id])
+  direction     LedgerDirection
+  amount        Decimal           @db.Decimal(14, 2)
+  currency      String            @default("ARS")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  // Append-only: sin updatedAt/deletedAt. Una corrección es un ADJUSTMENT nuevo, nunca un update.
+
+  @@index([transactionId])
+  @@index([accountId])
+  @@map("ledger_entries")
+}

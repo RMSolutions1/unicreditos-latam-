@@ -40,9 +40,12 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] Completar un pago real en sandbox de punta a punta (requiere túnel HTTPS para que Mercado Pago llegue al webhook local).
 
 ## Fase 5 — Ledger y Tesorería
-- [ ] Ledger de doble entrada operando para desembolsos y pagos de cuota (reemplaza cualquier campo `balance` mutable directo).
-- [ ] Treasury dashboard: fondos disponibles/comprometidos, desembolsos, cobros, liquidaciones.
-- [ ] Transacciones DB atómicas en la cadena "pago aprobado → asiento ledger → cuota actualizada → crédito actualizado → audit event".
+- [x] Ledger de doble entrada (`packages/ledger`) operando para desembolsos y pagos de cuota — probado contra Supabase, incluyendo el guard que rechaza transacciones desbalanceadas (0 filas escritas, rollback limpio confirmado).
+- [x] Treasury dashboard (`services/ledger`, puerto 3104): fondos, total desembolsado, total cobrado — probado con datos reales.
+- [x] Transacciones DB atómicas en la cadena "desembolso → Credit + Installments → asiento de ledger → audit event" y "pago aprobado → asiento de ledger → cuota actualizada → crédito actualizado → audit event" — ambas dentro de un único `prisma.$transaction`.
+- [x] `GET /treasury/reconciliation`: compara `Credit.balance` cacheado contra el saldo implícito del ledger — detectó correctamente que los créditos desembolsados antes de esta fase no tienen asientos históricos (no se hizo backfill; queda documentado, no oculto).
+- [ ] Liquidaciones a inversores — bloqueado hasta resolución legal de `ENABLE_INVESTOR_MODULE` (docs/SECURITY.md §1).
+- [ ] Backfill de ledger para los créditos desembolsados antes de esta fase (opcional, a decidir con el negocio).
 
 ## Fase 6 — Cobranzas y notificaciones
 - [ ] `CollectionService` con estados de mora y plantillas configurables (cobranza responsable, sin acoso).

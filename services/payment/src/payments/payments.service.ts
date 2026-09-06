@@ -5,6 +5,7 @@ import { PaymentRouterService } from '../providers/payment-router.service'
 import { MercadoPagoAdapter } from '../providers/mercadopago.adapter'
 import { DomainError } from '../common/errors/domain-error'
 import { publicId } from '../common/public-id'
+import { postLedgerTransaction, GLOBAL_OWNER_ID } from '@unicreditos/ledger'
 import type { AuthenticatedUser } from '@unicreditos/auth'
 
 type SessionContext = { ip?: string; userAgent?: string; requestId: string }
@@ -130,6 +131,17 @@ export class PaymentsService {
           await tx.credit.update({
             where: { id: intent.installment.creditId },
             data: { balance: remainingBalance, status: unpaidCount === 0 ? 'PAID_OFF' : undefined },
+          })
+
+          // Ledger de doble entrada (master prompt §39): el pago de cuota mueve fondos del
+          // cliente hacia TREASURY (disminuye lo que nos debe).
+          await postLedgerTransaction(tx, {
+            type: 'REPAYMENT',
+            reference: intent.id,
+            entries: [
+              { ownerType: 'CUSTOMER', ownerId: intent.userId, direction: 'CREDIT', amount: Number(intent.amount) },
+              { ownerType: 'TREASURY', ownerId: GLOBAL_OWNER_ID, direction: 'DEBIT', amount: Number(intent.amount) },
+            ],
           })
 
           await tx.auditLog.create({

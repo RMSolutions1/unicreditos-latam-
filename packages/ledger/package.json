@@ -1,0 +1,18 @@
+{
+  "name": "@unicreditos/ledger",
+  "private": true,
+  "version": "0.1.0",
+  "type": "commonjs",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {
+    "@unicreditos/database": "0.1.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.1",
+    "typescript": "~6.0.2"
+  }
+}
