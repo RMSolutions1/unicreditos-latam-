@@ -1,10 +1,12 @@
 import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common'
 import { JwtAuthGuard, RolesGuard, Roles, type AuthenticatedRequest } from '@unicreditos/auth'
+import type { CreditStatus } from '@unicreditos/database'
 import { PrismaService } from '../prisma/prisma.service'
 import { DomainError } from '../common/errors/domain-error'
 
 /** Roles con motivo de negocio para ver créditos de un cliente que no es el propio. */
 const CREDIT_STAFF_ROLES: string[] = ['RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO']
+const CREDIT_STATUS_VALUES: CreditStatus[] = ['ACTIVE', 'PAID_OFF']
 
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('credits')
@@ -20,8 +22,13 @@ export class CreditsController {
   @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO')
   @Get('all')
   async listAll(@Query('status') status?: string) {
+    // Hallazgo de auditoría: un status invalido llegaba crudo a Prisma y disparaba un 500
+    // generico en vez de un 400 -- se valida explicitamente contra el enum real.
+    if (status && !CREDIT_STATUS_VALUES.includes(status as CreditStatus)) {
+      throw new DomainError('VALIDATION_ERROR', `status debe ser uno de: ${CREDIT_STATUS_VALUES.join(', ')}.`)
+    }
     return this.prisma.client.credit.findMany({
-      where: status ? { status: status as never } : undefined,
+      where: status ? { status: status as CreditStatus } : undefined,
       orderBy: { createdAt: 'desc' },
       include: { application: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } },
     })
