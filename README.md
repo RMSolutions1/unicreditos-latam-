@@ -1,53 +1,48 @@
-# Unicréditos
+# UNICRÉDITOS
 
-Web de crédito online para personas. Lista para demo y despliegue: frontend, API y cuenta personal en un solo proyecto.
+Plataforma real de crédito online para el mercado argentino (LATAM-ready): monorepo de servicios
+de dominio independientes con ledger contable de doble entrada como fuente de verdad, motores
+separados de riesgo, KYC, pagos y cobranzas, y decisión de crédito con humano en el loop siempre.
+Ningún desembolso o pago se marca exitoso sin confirmación real del proveedor correspondiente
+(Mercado Pago, Didit, ArgenAPI).
 
-## Demo
+Documentación completa en [`docs/`](./docs/README.md) — empezar por
+[ARCHITECTURE.md](./docs/README.md) y [ROADMAP.md](./docs/ROADMAP.md) para el estado fase por fase.
 
-| | |
-|---|---|
-| Correo | `ana@unicreditos.mx` |
-| Contraseña | `demo1234` |
+## Estructura
 
-Ana ya tiene un crédito personal activo, pagos y documentos. También puedes crear una cuenta nueva desde **Solicitar crédito**.
+- `packages/` — librerías compartidas: `database` (Prisma), `auth` (JWT/RBAC), `ledger`
+  (doble entrada), `notifications`.
+- `services/` — microservicios NestJS: `identity` (3100), `kyc` (3101), `credit` (3102),
+  `payment` (3103), `ledger` (3104, tesorería), `collection` (3105).
+- `apps/admin` — backoffice (Vite + TypeScript, sin framework), puerto 5174.
 
-La evaluación en demo es automática:
+## Correr local
 
-- Ingreso ≥ 2.6× la mensualidad → preaprobado
-- Ingreso ≥ 1.6× → en revisión
-- Menor → no aprobado
-
-## Cómo correrlo
+Cada servicio y `apps/admin` tiene su propio `.env.example` — copiarlo a `.env` y completar
+credenciales reales antes de levantarlo.
 
 ```bash
 npm install
-npm run dev
+npm run generate --workspace packages/database
+
+npm run start:dev --workspace services/identity
+npm run start:dev --workspace services/kyc
+npm run start:dev --workspace services/credit
+npm run start:dev --workspace services/payment
+npm run start:dev --workspace services/ledger
+npm run start:dev --workspace services/collection
+
+npm --prefix apps/admin run dev
 ```
 
-Abre http://localhost:5173 (web) y http://localhost:3001/api/health (API).
-
-## Despliegue
+## Tests y CI
 
 ```bash
-npm run build
-npm start
+npm test --workspace services/credit
+npm test --workspace services/payment
+npm test --workspace packages/ledger
 ```
 
-La API y el sitio quedan en http://localhost:3001.
-
-```bash
-docker build -t unicreditos .
-docker run -p 3001:3001 unicreditos
-```
-
-## Prueba rápida
-
-Con el servidor encendido:
-
-```bash
-npm run smoke
-```
-
-## Rutas
-
-`/`, `/creditos`, `/como-funciona`, `/simulador`, `/solicitar`, `/nosotros`, `/ayuda`, `/privacidad`, `/terminos`, `/cuenta`
+Cada push/PR a `main` corre build + typecheck + tests en GitHub Actions
+([`.github/workflows/ci.yml`](./.github/workflows/ci.yml)).

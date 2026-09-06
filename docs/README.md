@@ -41,12 +41,11 @@
 4. Inscripción como Sujeto Obligado ante UIF si corresponde al modelo elegido.
 5. Validez de firma electrónica de contratos de crédito.
 
-## Qué falta para pasar a "Fase 1 — construcción"
+## Prototipo original
 
-Este entregable es análisis y esqueleto (`/apps`, `/services`, `/packages`, `/docs`,
-`/architecture`, `/database`, `/infrastructure`, `/tests` ya creados con un `README.md` cada uno).
-Antes de escribir el monorepo real (Turborepo/pnpm, NestJS, Next.js, Prisma) falta una decisión del
-negocio: **qué pasa con el prototipo actual** (`src/`, `server/` en la raíz) — se recomienda
-conservarlo como referencia de producto (ya fue auditado, ver hallazgos de seguridad de la
-conversación) pero no seguir extendiéndolo, y construir la plataforma nueva en paralelo bajo
-`/apps` y `/services`.
+El prototipo funcional que se usó para validar UX y flujos (`src/`, `server/` en la raíz —
+SPA + Express + store en memoria, credenciales de demo hardcodeadas, aprobación simulada) ya fue
+superado en alcance por la plataforma real (Fase 1-9 completas) y se eliminó del working tree;
+sigue accesible en el historial de git si hace falta consultarlo como referencia. La base de código
+de producción vive exclusivamente en `/apps`, `/services`, `/packages` — ver [ROADMAP.md](./ROADMAP.md)
+para el estado fase por fase.

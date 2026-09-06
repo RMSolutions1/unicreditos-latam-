@@ -8,9 +8,11 @@ un ledger contable como fuente de verdad de todos los saldos, y motores separado
 pagos, compliance, fraude y cobranzas. Ningún desembolso o pago se marca exitoso sin confirmación
 real del proveedor correspondiente (Mercado Pago, AstroPay, Didit, BCRA, ARCA, ArgenAPI).
 
-El proyecto actual (`src/`, `server/` en la raíz) es un prototipo funcional que sirvió para validar
-UX y flujos. Se conserva como referencia de producto pero **no es la base de código de producción**:
-la nueva arquitectura vive en `/apps`, `/services`, `/packages`.
+El prototipo original (`src/`, `server/` en la raíz — SPA + Express + store en memoria, con
+credenciales de demo hardcodeadas y aprobación simulada) sirvió para validar UX y flujos en la etapa
+de análisis, pero ya fue superado en alcance por la plataforma real y se eliminó del repositorio
+(sigue disponible en el historial de git si hace falta consultarlo). La arquitectura de producción
+vive exclusivamente en `/apps`, `/services`, `/packages`.
 
 ## 2. Vista de componentes
 
