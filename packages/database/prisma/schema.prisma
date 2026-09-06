@@ -170,6 +170,7 @@ model CreditApplication {
   credit    Credit?
 
   @@index([userId])
+  @@index([userId, createdAt(sort: Desc)], map: "credit_applications_user_idx")
   @@map("credit_applications")
 }
 
@@ -246,6 +247,7 @@ model Installment {
 
   @@unique([creditId, number])
   @@index([creditId])
+  @@index([status, dueDate], map: "installments_due_date_idx")
   @@map("installments")
 }
 
@@ -330,11 +332,14 @@ model PaymentIntent {
   externalReference String              @unique @map("external_reference")
   idempotencyKey    String              @unique @map("idempotency_key")
   providerPaymentId String?             @map("provider_payment_id")
+  providerPayload   Json                @default("{}") @map("provider_payload")
   createdAt         DateTime            @default(now()) @map("created_at")
   updatedAt         DateTime            @updatedAt @map("updated_at")
 
   @@index([userId])
   @@index([installmentId])
+  @@index([userId, createdAt(sort: Desc)], map: "payment_intents_user_idx")
+  @@index([status, createdAt(sort: Desc)], map: "payment_intents_status_idx")
   @@map("payment_intents")
 }
 
@@ -449,4 +454,31 @@ model CollectionCase {
 
   @@unique([creditId])
   @@map("collection_cases")
+}
+
+// --- NotificationEngine (Fase 6, docs/ROADMAP.md) -------------------------------------------
+// packages/notifications enviaba emails reales via Resend desde el día uno pero sin dejar
+// rastro persistido -- este modelo es solo el log de lo que YA pasa, no agrega ningún evento
+// nuevo al catálogo (NotificationEvent en packages/notifications/src/events.ts).
+
+enum NotificationStatus {
+  SENT
+  FAILED
+  SKIPPED
+}
+
+model NotificationLog {
+  id        String             @id @default(cuid())
+  userId    String?            @map("user_id")
+  type      String
+  channel   String             @default("email")
+  to        String
+  subject   String
+  status    NotificationStatus
+  error     String?
+  createdAt DateTime           @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([type])
+  @@map("notification_logs")
 }

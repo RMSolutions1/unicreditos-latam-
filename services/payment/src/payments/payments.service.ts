@@ -174,6 +174,7 @@ export class PaymentsService {
       if (customer) {
         void notify({
           type: 'PAYMENT_RECEIVED',
+          userId: customer.id,
           to: customer.email,
           firstName: customer.firstName,
           installmentNumber: approvedNotification.installmentNumber,

@@ -180,6 +180,20 @@ export type Contract = {
 
 export type ContractPage = { items: Contract[]; page: number; pageSize: number; total: number }
 
+export type NotificationLogEntry = {
+  id: string
+  userId: string | null
+  type: string
+  channel: string
+  to: string
+  subject: string
+  status: string
+  error: string | null
+  createdAt: string
+}
+
+export type NotificationLogPage = { items: NotificationLogEntry[]; page: number; pageSize: number; total: number }
+
 export type CollectionCase = {
   id: string
   creditId: string
@@ -251,4 +265,13 @@ export const api = {
   kycStatusForUser: (userId: string) => request<{ id: string; provider: string; status: string; requestedAt: string; resolvedAt: string | null } | null>(KYC_BASE, `/kyc/users/${userId}/latest`),
   applicationsByUser: (userId: string) => request<CreditApplication[]>(CREDIT_BASE, `/credit-applications/by-user/${userId}`),
   creditsByUser: (userId: string) => request<Credit[]>(CREDIT_BASE, `/credits/all?userId=${userId}`),
+
+  notifications: (params: { type?: string; status?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.type) query.set('type', params.type)
+    if (params.status) query.set('status', params.status)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<NotificationLogPage>(IDENTITY_BASE, `/notifications${qs ? `?${qs}` : ''}`)
+  },
 }

@@ -1,5 +1,5 @@
 import './style.css'
-import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Contract, type Credit, type CreditApplication, type SessionUser, type StaffUser } from './api'
+import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Contract, type Credit, type CreditApplication, type NotificationLogEntry, type SessionUser, type StaffUser } from './api'
 
 const KYC_STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pendiente',
@@ -51,6 +51,9 @@ const STATUS_LABEL: Record<string, string> = {
   PENDING: 'Pendiente',
   SUSPENDED: 'Suspendido',
   BLOCKED: 'Bloqueado',
+  SENT: 'Enviado',
+  FAILED: 'Falló',
+  SKIPPED: 'Omitido',
 }
 
 function statusBadge(status: string) {
@@ -71,7 +74,16 @@ const NAV_ITEMS = [
   { hash: '#/usuarios', label: 'Usuarios' },
   { hash: '#/clientes', label: 'Clientes' },
   { hash: '#/contratos', label: 'Contratos' },
+  { hash: '#/notificaciones', label: 'Notificaciones' },
 ]
+
+const NOTIFICATION_TYPE_LABEL: Record<string, string> = {
+  CREDIT_DISBURSED: 'Crédito desembolsado',
+  PAYMENT_RECEIVED: 'Pago recibido',
+  PAYMENT_OVERDUE: 'Cuota vencida',
+  KYC_APPROVED: 'KYC aprobado',
+  KYC_REJECTED: 'KYC rechazado',
+}
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
   root.innerHTML = `
@@ -863,6 +875,81 @@ async function renderContracts() {
 }
 
 // ---------------------------------------------------------------------------
+// Notificaciones
+// ---------------------------------------------------------------------------
+
+let notificationsState = { type: '', status: '', page: 1 }
+
+function notificationRow(n: NotificationLogEntry) {
+  return `
+    <tr>
+      <td>${dateFmt(n.createdAt)} ${new Date(n.createdAt).toLocaleTimeString('es-AR')}</td>
+      <td>${escapeHtml(NOTIFICATION_TYPE_LABEL[n.type] ?? n.type)}</td>
+      <td>${escapeHtml(n.to)}</td>
+      <td>${escapeHtml(n.subject)}</td>
+      <td>${statusBadge(n.status)}</td>
+      <td>${n.error ? `<span class="metric-sub" title="${escapeHtml(n.error)}">${escapeHtml(n.error.slice(0, 40))}…</span>` : '—'}</td>
+    </tr>
+  `
+}
+
+async function renderNotifications() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.notifications({ type: notificationsState.type || undefined, status: notificationsState.status || undefined, page: notificationsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Notificaciones (${result.total})</h1>
+      <p class="note">Registro real de cada email disparado por el NotificationEngine (desembolso, pago, mora) — no incluye SMS/WhatsApp todavía (pendiente de Redis/BullMQ, ver docs/ROADMAP.md).</p>
+      <form id="notif-filter-form" class="page-header-row" style="gap:8px;flex-wrap:wrap;">
+        <select id="notif-type" style="max-width:220px;margin-bottom:0;">
+          <option value="">Todos los tipos</option>
+          ${Object.entries(NOTIFICATION_TYPE_LABEL).map(([value, label]) => `<option value="${value}" ${value === notificationsState.type ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+        <select id="notif-status" style="max-width:160px;margin-bottom:0;">
+          <option value="">Todos los estados</option>
+          <option value="SENT" ${notificationsState.status === 'SENT' ? 'selected' : ''}>Enviado</option>
+          <option value="FAILED" ${notificationsState.status === 'FAILED' ? 'selected' : ''}>Falló</option>
+        </select>
+        <button type="submit" style="width:auto;">Filtrar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Para</th><th>Asunto</th><th>Estado</th><th>Error</th></tr></thead>
+          <tbody>${result.items.length ? result.items.map(notificationRow).join('') : '<tr><td colspan="6" class="empty">Sin notificaciones para este filtro.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="notif-prev" ${notificationsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="notif-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('notif-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      notificationsState = {
+        type: (document.getElementById('notif-type') as HTMLSelectElement).value,
+        status: (document.getElementById('notif-status') as HTMLSelectElement).value,
+        page: 1,
+      }
+      renderNotifications()
+    })
+    document.getElementById('notif-prev')?.addEventListener('click', () => {
+      notificationsState = { ...notificationsState, page: notificationsState.page - 1 }
+      renderNotifications()
+    })
+    document.getElementById('notif-next')?.addEventListener('click', () => {
+      notificationsState = { ...notificationsState, page: notificationsState.page + 1 }
+      renderNotifications()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -892,6 +979,7 @@ async function renderRoute() {
   else if (hash.startsWith('#/usuarios')) await renderUsers()
   else if (hash.startsWith('#/clientes')) await renderClients()
   else if (hash.startsWith('#/contratos')) await renderContracts()
+  else if (hash.startsWith('#/notificaciones')) await renderNotifications()
   else await renderDashboard()
 }
 

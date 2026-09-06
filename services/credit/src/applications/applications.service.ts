@@ -300,7 +300,7 @@ export class ApplicationsService {
     // Notificación fuera de la transacción de DB: un fallo de email nunca debe revertir un desembolso ya confirmado.
     const customer = await this.prisma.client.user.findUnique({ where: { id: application.userId } })
     if (customer) {
-      void notify({ type: 'CREDIT_DISBURSED', to: customer.email, firstName: customer.firstName, publicId: credit.publicId, amount: Number(credit.amount), disbursedTo: credit.disbursedTo ?? '' })
+      void notify({ type: 'CREDIT_DISBURSED', userId: customer.id, to: customer.email, firstName: customer.firstName, publicId: credit.publicId, amount: Number(credit.amount), disbursedTo: credit.disbursedTo ?? '' })
     }
 
     return this.prisma.client.credit.findUnique({ where: { id: credit.id }, include: { installments: true } })
