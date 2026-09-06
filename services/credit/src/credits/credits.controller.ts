@@ -21,14 +21,14 @@ export class CreditsController {
   // Ruta estática ANTES de ':id' -- si no, Nest interpreta "all" como un id.
   @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO')
   @Get('all')
-  async listAll(@Query('status') status?: string) {
+  async listAll(@Query('status') status?: string, @Query('userId') userId?: string) {
     // Hallazgo de auditoría: un status invalido llegaba crudo a Prisma y disparaba un 500
     // generico en vez de un 400 -- se valida explicitamente contra el enum real.
     if (status && !CREDIT_STATUS_VALUES.includes(status as CreditStatus)) {
       throw new DomainError('VALIDATION_ERROR', `status debe ser uno de: ${CREDIT_STATUS_VALUES.join(', ')}.`)
     }
     return this.prisma.client.credit.findMany({
-      where: status ? { status: status as CreditStatus } : undefined,
+      where: { status: (status as CreditStatus) || undefined, userId: userId || undefined },
       orderBy: { createdAt: 'desc' },
       include: { application: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } },
     })

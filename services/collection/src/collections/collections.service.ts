@@ -77,6 +77,7 @@ export class CollectionsService {
         const worstInstallment = overdueInstallments.sort((a, b) => Number(a.dueDate) - Number(b.dueDate))[0]
         void notify({
           type: 'PAYMENT_OVERDUE',
+          userId: credit.application.user.id,
           to: credit.application.user.email,
           firstName: credit.application.user.firstName,
           installmentNumber: worstInstallment?.number ?? 0,

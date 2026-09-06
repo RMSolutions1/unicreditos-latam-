@@ -13,7 +13,7 @@ export class PaymentsController {
   @Post()
   create(@Body() dto: CreatePaymentIntentDto, @Req() request: AuthenticatedRequest) {
     const ctx = { ip: request.ip, userAgent: request.headers['user-agent'], requestId: (request.headers['x-request-id'] as string) || randomUUID() }
-    return this.payments.createIntent(request.user!, dto.installmentId, ctx)
+    return this.payments.createIntent(request.user!, dto.installmentId, ctx, dto.provider)
   }
 
   @Get(':id')

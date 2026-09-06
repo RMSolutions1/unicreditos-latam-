@@ -1,4 +1,5 @@
 import { sendEmail } from './email'
+import { prisma } from '@unicreditos/database'
 
 /**
  * Catálogo de eventos del NotificationEngine (master prompt §47). Implementados hoy: los que
@@ -7,11 +8,11 @@ import { sendEmail } from './email'
  * dispara todavía.
  */
 export type NotificationEvent =
-  | { type: 'CREDIT_DISBURSED'; to: string; firstName: string; publicId: string; amount: number; disbursedTo: string }
-  | { type: 'PAYMENT_RECEIVED'; to: string; firstName: string; installmentNumber: number; amount: number; creditPublicId: string }
-  | { type: 'PAYMENT_OVERDUE'; to: string; firstName: string; installmentNumber: number; daysOverdue: number; amount: number; creditPublicId: string }
-  | { type: 'KYC_APPROVED'; to: string; firstName: string }
-  | { type: 'KYC_REJECTED'; to: string; firstName: string }
+  | { type: 'CREDIT_DISBURSED'; userId: string; to: string; firstName: string; publicId: string; amount: number; disbursedTo: string }
+  | { type: 'PAYMENT_RECEIVED'; userId: string; to: string; firstName: string; installmentNumber: number; amount: number; creditPublicId: string }
+  | { type: 'PAYMENT_OVERDUE'; userId: string; to: string; firstName: string; installmentNumber: number; daysOverdue: number; amount: number; creditPublicId: string }
+  | { type: 'KYC_APPROVED'; userId: string; to: string; firstName: string }
+  | { type: 'KYC_REJECTED'; userId: string; to: string; firstName: string }
 
 function money(value: number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(value)
@@ -41,7 +42,29 @@ function render(event: NotificationEvent): { subject: string; text: string } {
   }
 }
 
+/**
+ * Deja rastro de lo que YA pasa (sendEmail nunca lanza -- ver email.ts) -- nunca deja que un
+ * fallo al loguear tire abajo al caller, que ya llama a esto fire-and-forget justo después de
+ * confirmar un desembolso o un pago (mismo criterio que sendEmail).
+ */
 export async function notify(event: NotificationEvent) {
   const { subject, text } = render(event)
-  return sendEmail({ to: event.to, subject, text })
+  const result = await sendEmail({ to: event.to, subject, text })
+
+  try {
+    await prisma.notificationLog.create({
+      data: {
+        userId: event.userId,
+        type: event.type,
+        to: event.to,
+        subject,
+        status: result.ok ? 'SENT' : 'FAILED',
+        error: result.ok ? undefined : result.error,
+      },
+    })
+  } catch (error) {
+    console.error(JSON.stringify({ level: 'error', context: 'notifications', message: 'No se pudo loguear la notificación', error: error instanceof Error ? error.message : String(error) }))
+  }
+
+  return result
 }

@@ -1,4 +1,5 @@
 const IDENTITY_BASE = 'http://127.0.0.1:3100'
+const KYC_BASE = 'http://127.0.0.1:3101'
 const CREDIT_BASE = 'http://127.0.0.1:3102'
 const LEDGER_BASE = 'http://127.0.0.1:3104'
 const COLLECTION_BASE = 'http://127.0.0.1:3105'
@@ -22,8 +23,10 @@ async function request<T>(base: string, path: string, init: RequestInit = {}): P
   if (token) headers.set('Authorization', `Bearer ${token}`)
   const response = await fetch(`${base}${path}`, { ...init, headers })
   const text = await response.text()
-  const data = text ? JSON.parse(text) : {}
-  if (!response.ok) throw new Error((data as ApiError).message || 'No se pudo completar la operación.')
+  // Un body vacío (ej. GET /kyc/.../latest sin sesión) es "sin contenido", no "{}" -- importa para
+  // endpoints tipados como T | null (hallazgo de auditoría: rompía el render de la ficha de cliente).
+  const data = text ? JSON.parse(text) : null
+  if (!response.ok) throw new Error((data as ApiError | null)?.message || 'No se pudo completar la operación.')
   return data as T
 }
 
@@ -99,6 +102,43 @@ export type Reconciliation = {
   allMatch: boolean
 }
 
+export type StaffUser = {
+  id: string
+  email: string
+  firstName: string
+  lastName: string
+  phone: string | null
+  dni: string | null
+  cuil: string | null
+  income: number | null
+  role: string
+  status: string
+  mfaEnabled: boolean
+  createdAt: string
+}
+
+export type StaffUserPage = { items: StaffUser[]; page: number; pageSize: number; total: number }
+
+export const ROLES = [
+  'SUPER_ADMIN',
+  'CEO',
+  'CFO',
+  'CTO',
+  'RISK_MANAGER',
+  'COMPLIANCE_MANAGER',
+  'TREASURY_MANAGER',
+  'COLLECTION_MANAGER',
+  'OPERATIONS_MANAGER',
+  'SUPPORT',
+  'AUDITOR',
+  'ANALYST',
+  'MERCHANT_ADMIN',
+  'CUSTOMER',
+  'INVESTOR',
+] as const
+
+export const USER_STATUSES = ['ACTIVE', 'PENDING', 'SUSPENDED', 'BLOCKED'] as const
+
 export type AuditLog = {
   id: string
   actorId: string | null
@@ -115,6 +155,44 @@ export type AuditLog = {
 }
 
 export type AuditLogPage = { items: AuditLog[]; page: number; pageSize: number; total: number }
+
+export type Contract = {
+  id: string
+  applicationId: string
+  version: number
+  documentHash: string
+  acceptedAt: string
+  acceptedByUserId: string
+  ip: string | null
+  userAgent: string | null
+  createdAt: string
+  application: {
+    id: string
+    publicId: string
+    amount: string
+    months: number
+    status: string
+    user: { firstName: string; lastName: string; email: string }
+    product: { name: string }
+    credit: { id: string; publicId: string } | null
+  }
+}
+
+export type ContractPage = { items: Contract[]; page: number; pageSize: number; total: number }
+
+export type NotificationLogEntry = {
+  id: string
+  userId: string | null
+  type: string
+  channel: string
+  to: string
+  subject: string
+  status: string
+  error: string | null
+  createdAt: string
+}
+
+export type NotificationLogPage = { items: NotificationLogEntry[]; page: number; pageSize: number; total: number }
 
 export type CollectionCase = {
   id: string
@@ -161,5 +239,39 @@ export const api = {
     if (params.page) query.set('page', String(params.page))
     const qs = query.toString()
     return request<AuditLogPage>(IDENTITY_BASE, `/audit-logs${qs ? `?${qs}` : ''}`)
+  },
+
+  users: (params: { role?: string; status?: string; search?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.role) query.set('role', params.role)
+    if (params.status) query.set('status', params.status)
+    if (params.search) query.set('search', params.search)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<StaffUserPage>(IDENTITY_BASE, `/users${qs ? `?${qs}` : ''}`)
+  },
+  updateUser: (id: string, input: { role?: string; status?: string }) =>
+    request<StaffUser>(IDENTITY_BASE, `/users/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  userDetail: (id: string) => request<StaffUser>(IDENTITY_BASE, `/users/${id}`),
+
+  contracts: (params: { search?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.search) query.set('search', params.search)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<ContractPage>(CREDIT_BASE, `/contracts${qs ? `?${qs}` : ''}`)
+  },
+
+  kycStatusForUser: (userId: string) => request<{ id: string; provider: string; status: string; requestedAt: string; resolvedAt: string | null } | null>(KYC_BASE, `/kyc/users/${userId}/latest`),
+  applicationsByUser: (userId: string) => request<CreditApplication[]>(CREDIT_BASE, `/credit-applications/by-user/${userId}`),
+  creditsByUser: (userId: string) => request<Credit[]>(CREDIT_BASE, `/credits/all?userId=${userId}`),
+
+  notifications: (params: { type?: string; status?: string; page?: number } = {}) => {
+    const query = new URLSearchParams()
+    if (params.type) query.set('type', params.type)
+    if (params.status) query.set('status', params.status)
+    if (params.page) query.set('page', String(params.page))
+    const qs = query.toString()
+    return request<NotificationLogPage>(IDENTITY_BASE, `/notifications${qs ? `?${qs}` : ''}`)
   },
 }

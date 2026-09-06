@@ -1,5 +1,13 @@
 import './style.css'
-import { api, getToken, setToken, type AuditLog, type CollectionCase, type Credit, type CreditApplication, type SessionUser } from './api'
+import { api, getToken, setToken, ROLES, USER_STATUSES, type AuditLog, type CollectionCase, type Contract, type Credit, type CreditApplication, type NotificationLogEntry, type SessionUser, type StaffUser } from './api'
+
+const KYC_STATUS_LABEL: Record<string, string> = {
+  PENDING: 'Pendiente',
+  IN_PROGRESS: 'En progreso',
+  APPROVED: 'Aprobado',
+  REJECTED: 'Rechazado',
+  EXPIRED: 'Expirado',
+}
 
 const root = document.getElementById('app')!
 
@@ -40,6 +48,12 @@ const STATUS_LABEL: Record<string, string> = {
   LEGAL_REVIEW: 'Revisión legal',
   RECOVERED: 'Recuperado',
   DEFAULTED: 'Incobrable',
+  PENDING: 'Pendiente',
+  SUSPENDED: 'Suspendido',
+  BLOCKED: 'Bloqueado',
+  SENT: 'Enviado',
+  FAILED: 'Falló',
+  SKIPPED: 'Omitido',
 }
 
 function statusBadge(status: string) {
@@ -57,7 +71,19 @@ const NAV_ITEMS = [
   { hash: '#/cobranzas', label: 'Cobranzas' },
   { hash: '#/tesoreria', label: 'Tesorería' },
   { hash: '#/auditoria', label: 'Auditoría' },
+  { hash: '#/usuarios', label: 'Usuarios' },
+  { hash: '#/clientes', label: 'Clientes' },
+  { hash: '#/contratos', label: 'Contratos' },
+  { hash: '#/notificaciones', label: 'Notificaciones' },
 ]
+
+const NOTIFICATION_TYPE_LABEL: Record<string, string> = {
+  CREDIT_DISBURSED: 'Crédito desembolsado',
+  PAYMENT_RECEIVED: 'Pago recibido',
+  PAYMENT_OVERDUE: 'Cuota vencida',
+  KYC_APPROVED: 'KYC aprobado',
+  KYC_REJECTED: 'KYC rechazado',
+}
 
 function renderShell(user: SessionUser, activeHash: string, bodyHtml: string) {
   root.innerHTML = `
@@ -560,6 +586,370 @@ async function renderAudit() {
 }
 
 // ---------------------------------------------------------------------------
+// Usuarios
+// ---------------------------------------------------------------------------
+
+let usersState = { role: '', status: '', search: '', page: 1 }
+
+function userRow(u: StaffUser, canEdit: boolean) {
+  const roleOptions = ROLES.map((r) => `<option value="${r}" ${r === u.role ? 'selected' : ''}>${r}</option>`).join('')
+  const statusOptions = USER_STATUSES.map((s) => `<option value="${s}" ${s === u.status ? 'selected' : ''}>${STATUS_LABEL[s] ?? s}</option>`).join('')
+  return `
+    <tr data-user-row="${u.id}">
+      <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
+      <td>${escapeHtml(u.email)}</td>
+      <td>${canEdit ? `<select data-role="${u.id}">${roleOptions}</select>` : `<span class="badge">${escapeHtml(u.role)}</span>`}</td>
+      <td>${canEdit ? `<select data-status="${u.id}">${statusOptions}</select>` : statusBadge(u.status)}</td>
+      <td>${dateFmt(u.createdAt)}</td>
+      <td>${canEdit ? `<button class="small auto" data-save="${u.id}">Guardar</button>` : '—'}</td>
+    </tr>
+  `
+}
+
+async function renderUsers() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const [me, result] = await Promise.all([
+      api.me(),
+      api.users({ role: usersState.role || undefined, status: usersState.status || undefined, search: usersState.search || undefined, page: usersState.page }),
+    ])
+    const canEdit = me.role === 'SUPER_ADMIN'
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Usuarios (${result.total})</h1>
+      ${!canEdit ? '<p class="note">Solo SUPER_ADMIN puede cambiar rol o estado de una cuenta — vista de solo lectura.</p>' : ''}
+      <form id="users-filter-form" class="page-header-row" style="gap:8px;flex-wrap:wrap;">
+        <input id="users-search" placeholder="Buscar por nombre, email o DNI" value="${escapeHtml(usersState.search)}" style="max-width:240px;margin-bottom:0;" />
+        <select id="users-role" style="max-width:200px;margin-bottom:0;">
+          <option value="">Todos los roles</option>
+          ${ROLES.map((r) => `<option value="${r}" ${r === usersState.role ? 'selected' : ''}>${r}</option>`).join('')}
+        </select>
+        <select id="users-status" style="max-width:180px;margin-bottom:0;">
+          <option value="">Todos los estados</option>
+          ${USER_STATUSES.map((s) => `<option value="${s}" ${s === usersState.status ? 'selected' : ''}>${STATUS_LABEL[s] ?? s}</option>`).join('')}
+        </select>
+        <button type="submit" style="width:auto;">Filtrar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Rol</th><th>Estado</th><th>Creado</th><th></th></tr></thead>
+          <tbody>${result.items.length ? result.items.map((u) => userRow(u, canEdit)).join('') : '<tr><td colspan="6" class="empty">Sin resultados.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="users-prev" ${usersState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="users-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('users-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      usersState = {
+        role: (document.getElementById('users-role') as HTMLSelectElement).value,
+        status: (document.getElementById('users-status') as HTMLSelectElement).value,
+        search: (document.getElementById('users-search') as HTMLInputElement).value.trim(),
+        page: 1,
+      }
+      renderUsers()
+    })
+    document.getElementById('users-prev')?.addEventListener('click', () => {
+      usersState = { ...usersState, page: usersState.page - 1 }
+      renderUsers()
+    })
+    document.getElementById('users-next')?.addEventListener('click', () => {
+      usersState = { ...usersState, page: usersState.page + 1 }
+      renderUsers()
+    })
+    document.querySelectorAll<HTMLButtonElement>('[data-save]').forEach((btn) =>
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.save!
+        const role = (document.querySelector(`[data-role="${id}"]`) as HTMLSelectElement).value
+        const status = (document.querySelector(`[data-status="${id}"]`) as HTMLSelectElement).value
+        runAction(btn, () => api.updateUser(id, { role, status }), renderUsers)
+      }),
+    )
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los usuarios.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Clientes
+// ---------------------------------------------------------------------------
+
+let clientsState = { search: '', page: 1 }
+
+async function renderClients() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.users({ role: 'CUSTOMER', search: clientsState.search || undefined, page: clientsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Clientes (${result.total})</h1>
+      <form id="clients-filter-form" class="page-header-row" style="gap:8px;">
+        <input id="clients-search" placeholder="Buscar por nombre, email o DNI" value="${escapeHtml(clientsState.search)}" style="max-width:280px;margin-bottom:0;" />
+        <button type="submit" style="width:auto;">Buscar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Nombre</th><th>Email</th><th>Estado</th><th>Ingreso declarado</th><th>Cliente desde</th><th></th></tr></thead>
+          <tbody>
+            ${
+              result.items.length
+                ? result.items
+                    .map(
+                      (u) => `
+              <tr>
+                <td>${escapeHtml(u.firstName)} ${escapeHtml(u.lastName)}</td>
+                <td>${escapeHtml(u.email)}</td>
+                <td>${statusBadge(u.status)}</td>
+                <td>${u.income ? money(u.income) : '—'}</td>
+                <td>${dateFmt(u.createdAt)}</td>
+                <td><a href="#/clientes/${u.id}">Ver ficha →</a></td>
+              </tr>
+            `,
+                    )
+                    .join('')
+                : '<tr><td colspan="6" class="empty">Sin resultados.</td></tr>'
+            }
+          </tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="clients-prev" ${clientsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="clients-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('clients-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      clientsState = { search: (document.getElementById('clients-search') as HTMLInputElement).value.trim(), page: 1 }
+      renderClients()
+    })
+    document.getElementById('clients-prev')?.addEventListener('click', () => {
+      clientsState = { ...clientsState, page: clientsState.page - 1 }
+      renderClients()
+    })
+    document.getElementById('clients-next')?.addEventListener('click', () => {
+      clientsState = { ...clientsState, page: clientsState.page + 1 }
+      renderClients()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los clientes.')}</div>`)
+  }
+}
+
+async function renderClientDetail(id: string) {
+  setBody(`<div class="loading">Cargando…</div>`)
+  const [profileResult, kycResult, appsResult, creditsResult] = await Promise.allSettled([
+    api.userDetail(id),
+    api.kycStatusForUser(id),
+    api.applicationsByUser(id),
+    api.creditsByUser(id),
+  ])
+
+  if (profileResult.status === 'rejected') {
+    setBody(`<div class="error-box">${escapeHtml(profileResult.reason instanceof Error ? profileResult.reason.message : 'No se pudo cargar el cliente.')}</div>`)
+    return
+  }
+
+  const profile = profileResult.value
+  const kyc = kycResult.status === 'fulfilled' ? kycResult.value : null
+  const apps = appsResult.status === 'fulfilled' ? appsResult.value : []
+  const credits = creditsResult.status === 'fulfilled' ? creditsResult.value : []
+
+  setBody(`
+    <a href="#/clientes" class="back-link">← Volver a clientes</a>
+    <h1 class="page-title">${escapeHtml(profile.firstName)} ${escapeHtml(profile.lastName)}</h1>
+    <div class="detail-grid">
+      <div><strong>Email</strong>${escapeHtml(profile.email)}</div>
+      <div><strong>Teléfono</strong>${escapeHtml(profile.phone) || '—'}</div>
+      <div><strong>DNI</strong>${escapeHtml(profile.dni) || '—'}</div>
+      <div><strong>CUIL</strong>${escapeHtml(profile.cuil) || '—'}</div>
+      <div><strong>Ingreso declarado</strong>${profile.income ? money(profile.income) : '—'}</div>
+      <div><strong>Estado de cuenta</strong>${statusBadge(profile.status)}</div>
+      <div><strong>Cliente desde</strong>${dateFmt(profile.createdAt)}</div>
+      <div><strong>Verificación de identidad</strong>${kyc ? `<span class="status-badge status-${escapeHtml(kyc.status.toLowerCase())}">${escapeHtml(KYC_STATUS_LABEL[kyc.status] ?? kyc.status)}</span>` : '<span class="metric-sub">Sin iniciar</span>'}</div>
+    </div>
+
+    <div class="section-title">Solicitudes de crédito (${apps.length})</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Folio</th><th>Producto</th><th>Monto</th><th>Estado</th><th>Fecha</th></tr></thead>
+        <tbody>
+          ${
+            apps.length
+              ? apps
+                  .map((a) => `<tr><td><a href="#/solicitudes/${a.id}">${escapeHtml(a.publicId)}</a></td><td>${escapeHtml(a.product?.name)}</td><td>${money(a.amount)}</td><td>${statusBadge(a.status)}</td><td>${dateFmt(a.createdAt)}</td></tr>`)
+                  .join('')
+              : '<tr><td colspan="5" class="empty">Sin solicitudes.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+
+    <div class="section-title">Créditos (${credits.length})</div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Folio</th><th>Monto</th><th>Saldo</th><th>Estado</th><th></th></tr></thead>
+        <tbody>
+          ${
+            credits.length
+              ? credits
+                  .map((c) => `<tr><td>${escapeHtml(c.publicId)}</td><td>${money(c.amount)}</td><td>${money(c.balance)}</td><td>${statusBadge(c.status)}</td><td><a href="#/creditos/${c.id}">Ver cuotas →</a></td></tr>`)
+                  .join('')
+              : '<tr><td colspan="5" class="empty">Sin créditos.</td></tr>'
+          }
+        </tbody>
+      </table>
+    </div>
+  `)
+}
+
+// ---------------------------------------------------------------------------
+// Contratos
+// ---------------------------------------------------------------------------
+
+let contractsState = { search: '', page: 1 }
+
+function contractRow(c: Contract) {
+  return `
+    <tr>
+      <td>${escapeHtml(c.application.publicId)}</td>
+      <td>${escapeHtml(c.application.user ? `${c.application.user.firstName} ${c.application.user.lastName}` : c.application.id)}</td>
+      <td>${money(c.application.amount)} · ${c.application.months}m</td>
+      <td>${statusBadge(c.application.status)}</td>
+      <td>${dateFmt(c.acceptedAt)}</td>
+      <td>${c.application.credit ? `<a href="#/creditos/${c.application.credit.id}">${escapeHtml(c.application.credit.publicId)} →</a>` : '—'}</td>
+      <td><span class="metric-sub" title="${escapeHtml(c.documentHash)}">${escapeHtml(c.documentHash.slice(0, 12))}…</span></td>
+    </tr>
+  `
+}
+
+async function renderContracts() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.contracts({ search: contractsState.search || undefined, page: contractsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Contratos (${result.total})</h1>
+      <p class="note">Registro inmutable — un contrato se crea una única vez al aceptarlo, nunca se edita ni se borra.</p>
+      <form id="contracts-filter-form" class="page-header-row" style="gap:8px;">
+        <input id="contracts-search" placeholder="Buscar por folio o cliente" value="${escapeHtml(contractsState.search)}" style="max-width:280px;margin-bottom:0;" />
+        <button type="submit" style="width:auto;">Buscar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Solicitud</th><th>Cliente</th><th>Monto</th><th>Estado</th><th>Aceptado</th><th>Crédito</th><th>Hash</th></tr></thead>
+          <tbody>${result.items.length ? result.items.map(contractRow).join('') : '<tr><td colspan="7" class="empty">Sin contratos.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="contracts-prev" ${contractsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="contracts-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('contracts-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      contractsState = { search: (document.getElementById('contracts-search') as HTMLInputElement).value.trim(), page: 1 }
+      renderContracts()
+    })
+    document.getElementById('contracts-prev')?.addEventListener('click', () => {
+      contractsState = { ...contractsState, page: contractsState.page - 1 }
+      renderContracts()
+    })
+    document.getElementById('contracts-next')?.addEventListener('click', () => {
+      contractsState = { ...contractsState, page: contractsState.page + 1 }
+      renderContracts()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar los contratos.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Notificaciones
+// ---------------------------------------------------------------------------
+
+let notificationsState = { type: '', status: '', page: 1 }
+
+function notificationRow(n: NotificationLogEntry) {
+  return `
+    <tr>
+      <td>${dateFmt(n.createdAt)} ${new Date(n.createdAt).toLocaleTimeString('es-AR')}</td>
+      <td>${escapeHtml(NOTIFICATION_TYPE_LABEL[n.type] ?? n.type)}</td>
+      <td>${escapeHtml(n.to)}</td>
+      <td>${escapeHtml(n.subject)}</td>
+      <td>${statusBadge(n.status)}</td>
+      <td>${n.error ? `<span class="metric-sub" title="${escapeHtml(n.error)}">${escapeHtml(n.error.slice(0, 40))}…</span>` : '—'}</td>
+    </tr>
+  `
+}
+
+async function renderNotifications() {
+  setBody(`<div class="loading">Cargando…</div>`)
+  try {
+    const result = await api.notifications({ type: notificationsState.type || undefined, status: notificationsState.status || undefined, page: notificationsState.page })
+    const totalPages = Math.max(1, Math.ceil(result.total / result.pageSize))
+
+    setBody(`
+      <h1 class="page-title">Notificaciones (${result.total})</h1>
+      <p class="note">Registro real de cada email disparado por el NotificationEngine (desembolso, pago, mora) — no incluye SMS/WhatsApp todavía (pendiente de Redis/BullMQ, ver docs/ROADMAP.md).</p>
+      <form id="notif-filter-form" class="page-header-row" style="gap:8px;flex-wrap:wrap;">
+        <select id="notif-type" style="max-width:220px;margin-bottom:0;">
+          <option value="">Todos los tipos</option>
+          ${Object.entries(NOTIFICATION_TYPE_LABEL).map(([value, label]) => `<option value="${value}" ${value === notificationsState.type ? 'selected' : ''}>${label}</option>`).join('')}
+        </select>
+        <select id="notif-status" style="max-width:160px;margin-bottom:0;">
+          <option value="">Todos los estados</option>
+          <option value="SENT" ${notificationsState.status === 'SENT' ? 'selected' : ''}>Enviado</option>
+          <option value="FAILED" ${notificationsState.status === 'FAILED' ? 'selected' : ''}>Falló</option>
+        </select>
+        <button type="submit" style="width:auto;">Filtrar</button>
+      </form>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Fecha</th><th>Tipo</th><th>Para</th><th>Asunto</th><th>Estado</th><th>Error</th></tr></thead>
+          <tbody>${result.items.length ? result.items.map(notificationRow).join('') : '<tr><td colspan="6" class="empty">Sin notificaciones para este filtro.</td></tr>'}</tbody>
+        </table>
+      </div>
+      <div class="page-header-row">
+        <button class="secondary" id="notif-prev" ${notificationsState.page <= 1 ? 'disabled' : ''} style="width:auto;">← Anterior</button>
+        <span class="metric-sub">Página ${result.page} de ${totalPages}</span>
+        <button class="secondary" id="notif-next" ${result.page >= totalPages ? 'disabled' : ''} style="width:auto;">Siguiente →</button>
+      </div>
+    `)
+
+    document.getElementById('notif-filter-form')?.addEventListener('submit', (event) => {
+      event.preventDefault()
+      notificationsState = {
+        type: (document.getElementById('notif-type') as HTMLSelectElement).value,
+        status: (document.getElementById('notif-status') as HTMLSelectElement).value,
+        page: 1,
+      }
+      renderNotifications()
+    })
+    document.getElementById('notif-prev')?.addEventListener('click', () => {
+      notificationsState = { ...notificationsState, page: notificationsState.page - 1 }
+      renderNotifications()
+    })
+    document.getElementById('notif-next')?.addEventListener('click', () => {
+      notificationsState = { ...notificationsState, page: notificationsState.page + 1 }
+      renderNotifications()
+    })
+  } catch (error) {
+    setBody(`<div class="error-box">${escapeHtml(error instanceof Error ? error.message : 'No se pudieron cargar las notificaciones.')}</div>`)
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
 
@@ -576,14 +966,20 @@ async function renderRoute() {
 
   const appMatch = hash.match(/^#\/solicitudes\/(.+)$/)
   const creditMatch = hash.match(/^#\/creditos\/(.+)$/)
+  const clientMatch = hash.match(/^#\/clientes\/(.+)$/)
 
   if (appMatch) await renderApplicationDetail(appMatch[1])
   else if (creditMatch) await renderCreditDetail(creditMatch[1])
+  else if (clientMatch) await renderClientDetail(clientMatch[1])
   else if (hash.startsWith('#/solicitudes')) await renderApplications()
   else if (hash.startsWith('#/creditos')) await renderCredits()
   else if (hash.startsWith('#/cobranzas')) await renderCollections()
   else if (hash.startsWith('#/tesoreria')) await renderTreasury()
   else if (hash.startsWith('#/auditoria')) await renderAudit()
+  else if (hash.startsWith('#/usuarios')) await renderUsers()
+  else if (hash.startsWith('#/clientes')) await renderClients()
+  else if (hash.startsWith('#/contratos')) await renderContracts()
+  else if (hash.startsWith('#/notificaciones')) await renderNotifications()
   else await renderDashboard()
 }
 

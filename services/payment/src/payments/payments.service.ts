@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common'
 import { randomUUID } from 'node:crypto'
 import { PrismaService } from '../prisma/prisma.service'
-import { PaymentRouterService } from '../providers/payment-router.service'
+import { PaymentRouterService, type ProviderName } from '../providers/payment-router.service'
 import { MercadoPagoAdapter } from '../providers/mercadopago.adapter'
 import { AstroPayAdapter } from '../providers/astropay.adapter'
 import { DomainError } from '../common/errors/domain-error'
@@ -41,7 +41,7 @@ export class PaymentsService {
     })
   }
 
-  async createIntent(user: AuthenticatedUser, installmentId: string, ctx: SessionContext) {
+  async createIntent(user: AuthenticatedUser, installmentId: string, ctx: SessionContext, preferredProvider?: ProviderName) {
     const installment = await this.prisma.client.installment.findUnique({
       where: { id: installmentId },
       include: { credit: true },
@@ -53,7 +53,7 @@ export class PaymentsService {
 
     const amount = Number(installment.totalDue) - Number(installment.amountPaid)
     const externalReference = publicId('UNI-PAY')
-    const provider = this.router.resolve('AR')
+    const provider = this.router.resolve('AR', preferredProvider)
 
     const checkout = await provider.createCheckout({
       amount,
@@ -174,6 +174,7 @@ export class PaymentsService {
       if (customer) {
         void notify({
           type: 'PAYMENT_RECEIVED',
+          userId: customer.id,
           to: customer.email,
           firstName: customer.firstName,
           installmentNumber: approvedNotification.installmentNumber,

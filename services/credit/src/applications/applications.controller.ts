@@ -38,6 +38,13 @@ export class ApplicationsController {
     return this.applications.listReadyForDisbursement()
   }
 
+  /** Vista "Clientes" del admin: historial de solicitudes de un cliente puntual, no el propio. */
+  @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO')
+  @Get('by-user/:userId')
+  listByUser(@Param('userId') userId: string) {
+    return this.applications.listMine(userId)
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.applications.getOne(id, request.user!)
