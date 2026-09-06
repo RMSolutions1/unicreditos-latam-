@@ -1,0 +1,14 @@
+import { PrismaClient } from '@prisma/client'
+
+declare global {
+  // eslint-disable-next-line no-var
+  var __unicreditosPrisma: PrismaClient | undefined
+}
+
+export const prisma = global.__unicreditosPrisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') {
+  global.__unicreditosPrisma = prisma
+}
+
+export * from '@prisma/client'
