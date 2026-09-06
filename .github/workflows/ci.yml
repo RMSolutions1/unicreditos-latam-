@@ -25,6 +25,9 @@ jobs:
       - name: Instalar dependencias del monorepo
         run: npm ci
 
+      - name: Lint
+        run: npm run lint
+
       - name: Generar cliente de Prisma
         run: npm run generate --workspace packages/database
 
