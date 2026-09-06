@@ -31,3 +31,10 @@ export interface PaymentProvider {
   getPayment(providerPaymentId: string): Promise<ProviderPaymentStatus>
   validateWebhookSignature(headers: Record<string, string | undefined>, rawPaymentId: string): boolean
 }
+
+/**
+ * Lo mínimo que PaymentRouterService necesita para crear un checkout. AstroPayAdapter no
+ * implementa PaymentProvider completo (su verificación de webhook es async y firma el body
+ * crudo, no un id) pero sí satisface esto -- ver payment-router.service.ts.
+ */
+export type CheckoutCapableProvider = Pick<PaymentProvider, 'name' | 'isConfigured' | 'createCheckout' | 'getPayment'>

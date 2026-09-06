@@ -164,6 +164,8 @@ permita explícitamente, y sin PII identificable).
 2. **Broker de eventos**: BullMQ/Redis alcanza para colas de trabajo, pero un event bus real
    (outbox pattern sobre Postgres + worker) es necesario para no perder eventos financieros si Redis
    cae. Diseñar `packages/events` sobre outbox desde el día uno.
-3. **AstroPay**: no hay documentación pública de API confirmada en este proyecto todavía. El adapter
-   se construye con la interfaz `PaymentProvider` pero **no se activa** (`ENABLE_ASTROPAY=false`)
-   hasta tener credenciales reales y su documentación oficial — no se inventan endpoints.
+3. **AstroPay**: construido contra la documentación real de AstroPay (`docs/ROADMAP.md` Fase 4) y
+   wireado en `PaymentRouterService` — decisión de negocio: **convive** con Mercado Pago para `AR`,
+   el cliente elige el proveedor al crear el `PaymentIntent`. Sigue detrás de `ENABLE_ASTROPAY`
+   (default `false`) como kill-switch porque nunca se probó un pago ni un webhook de punta a punta
+   (sin credenciales de sandbox) y las credenciales existentes autentican contra producción.
