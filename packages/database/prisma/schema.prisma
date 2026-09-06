@@ -46,16 +46,71 @@ model User {
   status       UserStatus @default(ACTIVE)
   firstName    String     @map("first_name")
   lastName     String     @map("last_name")
+  dni          String?
+  cuil         String?
   lastLoginAt  DateTime?  @map("last_login_at")
 
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime  @updatedAt @map("updated_at")
   deletedAt DateTime? @map("deleted_at")
 
-  refreshTokens RefreshToken[]
-  auditLogs     AuditLog[]
+  refreshTokens             RefreshToken[]
+  auditLogs                 AuditLog[]
+  kycVerifications          KycVerification[]
+  bankAccountVerifications  BankAccountVerification[]
 
   @@map("users")
+}
+
+enum KycStatus {
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+  EXPIRED
+}
+
+// El resultado crudo del proveedor nunca se guarda en claro (docs/SECURITY.md §4 — minimización
+// y cifrado de datos sensibles). `normalizedResult` guarda solo lo mínimo necesario para la UI.
+model KycVerification {
+  id                 String    @id @default(cuid())
+  userId             String    @map("user_id")
+  user               User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider           String    @default("didit")
+  providerSessionId  String    @map("provider_session_id")
+  status             KycStatus @default(PENDING)
+  normalizedResult   Json?     @map("normalized_result")
+  rawResultEncrypted Bytes?    @map("raw_result_encrypted")
+  requestedAt        DateTime  @default(now()) @map("requested_at")
+  resolvedAt         DateTime? @map("resolved_at")
+
+  @@unique([provider, providerSessionId])
+  @@index([userId])
+  @@map("kyc_verifications")
+}
+
+enum BankMatchStatus {
+  PENDING
+  VERIFIED
+  MISMATCH
+  REJECTED
+  ERROR
+}
+
+model BankAccountVerification {
+  id           String           @id @default(cuid())
+  userId       String           @map("user_id")
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  provider     String           @default("argenapi")
+  cbuOrAlias   String           @map("cbu_or_alias")
+  holderName   String?          @map("holder_name")
+  holderCuit   String?          @map("holder_cuit")
+  matchStatus  BankMatchStatus  @default(PENDING) @map("match_status")
+  requestId    String           @map("request_id")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@map("bank_account_verifications")
 }
 
 model RefreshToken {

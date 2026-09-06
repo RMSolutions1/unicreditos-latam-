@@ -1,14 +1,11 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import type { Role } from '@unicreditos/database'
-import { DomainError } from '../errors/domain-error'
-import { ROLES_KEY } from '../decorators/roles.decorator'
-import type { AuthenticatedRequest } from '../../auth/auth.types'
+import { AUTH_ERROR } from './domain-error'
+import { ROLES_KEY } from './roles.decorator'
+import type { AuthenticatedRequest } from './types'
 
-/**
- * Least privilege (docs/SECURITY.md §5): sin @Roles(...) el endpoint solo exige estar autenticado.
- * Con @Roles(...) exige además pertenecer a uno de esos roles.
- */
+/** Least privilege (docs/SECURITY.md §5): sin @Roles(...) solo exige estar autenticado. */
 @Injectable()
 export class RolesGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
@@ -18,9 +15,8 @@ export class RolesGuard implements CanActivate {
     if (!requiredRoles || requiredRoles.length === 0) return true
 
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>()
-    const user = request.user
-    if (!user || !requiredRoles.includes(user.role)) {
-      throw new DomainError('INSUFFICIENT_PERMISSIONS', 'No tenés permisos para esta acción.')
+    if (!request.user || !requiredRoles.includes(request.user.role)) {
+      throw AUTH_ERROR.insufficientPermissions()
     }
     return true
   }

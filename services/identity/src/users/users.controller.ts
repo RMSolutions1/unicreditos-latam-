@@ -1,7 +1,6 @@
 import { Controller, Get, Req, UseGuards } from '@nestjs/common'
-import { JwtAuthGuard } from '../common/guards/jwt-auth.guard'
+import { JwtAuthGuard, type AuthenticatedRequest } from '@unicreditos/auth'
 import { PrismaService } from '../prisma/prisma.service'
-import type { AuthenticatedRequest } from '../auth/auth.types'
 import { DomainError } from '../common/errors/domain-error'
 
 @Controller('users')

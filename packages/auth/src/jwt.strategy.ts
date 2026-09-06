@@ -1,14 +1,12 @@
 import { Injectable } from '@nestjs/common'
 import { PassportStrategy } from '@nestjs/passport'
 import { ExtractJwt, Strategy } from 'passport-jwt'
-import type { AuthenticatedUser } from '../auth.types'
+import type { AccessTokenPayload, AuthenticatedUser } from './types'
 
-export type AccessTokenPayload = {
-  sub: string
-  email: string
-  role: AuthenticatedUser['role']
-}
-
+/**
+ * Fail-closed (docs/SECURITY.md §2): sin JWT_ACCESS_SECRET, el servicio no debe arrancar.
+ * Cada servicio que use este paquete comparte el mismo secreto de acceso emitido por identity.
+ */
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor() {

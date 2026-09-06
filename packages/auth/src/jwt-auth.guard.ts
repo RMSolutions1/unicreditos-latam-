@@ -1,13 +1,11 @@
 import { ExecutionContext, Injectable } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
-import { DomainError } from '../errors/domain-error'
+import { AUTH_ERROR } from './domain-error'
 
 @Injectable()
 export class JwtAuthGuard extends AuthGuard('jwt') {
   handleRequest<T = unknown>(err: unknown, user: T): T {
-    if (err || !user) {
-      throw new DomainError('INVALID_CREDENTIALS', 'Iniciá sesión para continuar.')
-    }
+    if (err || !user) throw AUTH_ERROR.invalidCredentials()
     return user
   }
 

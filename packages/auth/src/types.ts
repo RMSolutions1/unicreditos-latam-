@@ -8,3 +8,9 @@ export type AuthenticatedUser = {
 }
 
 export type AuthenticatedRequest = Request & { user?: AuthenticatedUser }
+
+export type AccessTokenPayload = {
+  sub: string
+  email: string
+  role: Role
+}

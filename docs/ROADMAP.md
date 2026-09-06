@@ -19,10 +19,10 @@ responsive + accesibilidad + seguridad + observabilidad).
 - [ ] CI mínimo: lint + typecheck + unit tests en cada push.
 
 ## Fase 2 — Identidad del cliente y KYC
-- [ ] `services/kyc` + `DiditAdapter` (real, sin mocks fuera de test/dev).
-- [ ] `TaxIdentityService` + `ARCAAdapter` (DNI/CUIL/CUIT).
-- [ ] `BankAccountVerificationAdapter` (ArgenAPI) con estados `PENDING/VERIFIED/MISMATCH/REJECTED/ERROR`.
-- [ ] Política de minimización y cifrado de datos sensibles (`docs/SECURITY.md` §4) implementada, no solo documentada.
+- [x] `services/kyc` + `DiditAdapter` — probado contra la API real de Didit (sin mocks).
+- [x] `BankAccountVerificationAdapter` (ArgenAPI) con estados `PENDING/VERIFIED/MISMATCH/REJECTED/ERROR` — probado contra la API real; ahora requiere autenticación (el prototipo la exponía sin auth).
+- [ ] `TaxIdentityService` + `ARCAAdapter` (DNI/CUIL/CUIT) — interfaz lista (`ArcaAdapter.isConfigured()`), pero sin credenciales de ARCA todavía; cualquier llamada falla explícitamente con `TAX_PROVIDER_NOT_CONFIGURED` en vez de inventar una respuesta.
+- [ ] Cifrado a nivel de columna para `rawResultEncrypted` (hoy el campo existe en el esquema pero no hay cifrado de aplicación todavía — hoy no se está guardando resultado crudo, solo el normalizado).
 
 ## Fase 3 — Credit Engine
 - [ ] `CreditProduct`, `CreditApplication`, `Credit`, `Installment`, `Contract`.
