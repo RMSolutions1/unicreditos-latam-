@@ -199,3 +199,116 @@ button.secondary {
   color: #6b7a89;
   margin-top: 24px;
 }
+
+/* --- Layout con sidebar (Fase 9) --- */
+
+.app-shell {
+  display: flex;
+  min-height: 100vh;
+}
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: var(--color-primary);
+  color: var(--color-white);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 0;
+}
+
+.sidebar-brand {
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  font-size: 15px;
+  padding: 0 20px 20px;
+}
+.sidebar-brand span { color: var(--color-accent); }
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+}
+
+.sidebar-link {
+  color: rgba(255, 255, 255, 0.75);
+  text-decoration: none;
+  padding: 10px 20px;
+  font-size: 14px;
+  border-left: 3px solid transparent;
+}
+.sidebar-link:hover { background: rgba(255, 255, 255, 0.06); color: var(--color-white); }
+.sidebar-link.active {
+  background: rgba(24, 169, 116, 0.15);
+  border-left-color: var(--color-accent);
+  color: var(--color-white);
+  font-weight: 600;
+}
+
+.sidebar-footer {
+  padding: 16px 20px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.sidebar-user { margin-bottom: 12px; }
+.sidebar-user-name { font-weight: 600; margin-top: 6px; font-size: 14px; }
+.sidebar-user-email { font-size: 12px; color: rgba(255, 255, 255, 0.6); }
+.sidebar-footer button { background: rgba(255, 255, 255, 0.1); color: var(--color-white); border: none; }
+.sidebar-footer button:hover { background: rgba(255, 255, 255, 0.18); }
+
+.main-content {
+  flex: 1;
+  padding: 28px 36px;
+  overflow-x: auto;
+  max-width: 1200px;
+}
+
+.page-title { color: var(--color-primary); margin: 0 0 20px; font-size: 22px; }
+.page-header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 4px; }
+.page-header-row button { width: auto; padding: 10px 16px; }
+
+.loading { padding: 40px; text-align: center; color: var(--color-secondary); }
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+  margin-bottom: 8px;
+}
+.metric-card {
+  background: var(--color-white);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+}
+.metric-card.metric-warn { border-left: 3px solid #d99a1f; }
+.metric-card.metric-danger { border-left: 3px solid var(--color-danger); }
+.metric-label { font-size: 12px; color: var(--color-secondary); text-transform: uppercase; letter-spacing: 0.03em; font-weight: 600; }
+.metric-value { font-size: 24px; font-weight: 700; color: var(--color-primary); margin-top: 4px; }
+.metric-sub { font-size: 12px; color: #6b7a89; margin-top: 2px; }
+.metric-link { font-size: 12px; color: var(--color-accent); font-weight: 600; text-decoration: none; display: inline-block; margin-top: 6px; }
+
+.table-wrap { overflow-x: auto; background: var(--color-white); border-radius: var(--radius); box-shadow: var(--shadow); margin-bottom: 20px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid #eef1f4; white-space: nowrap; }
+th { color: var(--color-secondary); font-weight: 700; text-transform: uppercase; font-size: 11px; letter-spacing: 0.03em; }
+tr:last-child td { border-bottom: none; }
+td a { color: var(--color-accent); text-decoration: none; font-weight: 600; }
+.empty { text-align: center; color: #9aa7b0; padding: 24px; }
+tr.row-mismatch { background: #fdecec; }
+
+.status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+.status-submitted, .status-pending, .status-manual_review { background: #fff4de; color: #a56a00; }
+.status-pre_approved, .status-ready_for_disbursement, .status-grace_period { background: #e6f0fb; color: #1c5fa8; }
+.status-approved, .status-active, .status-disbursed, .status-paid, .status-current, .status-recovered { background: #e3f7ee; color: #0d8a4f; }
+.status-rejected, .status-cancelled, .status-overdue, .status-defaulted, .status-legal_review, .status-intensive_collection { background: #fdecec; color: #b23a3a; }
+.status-paid_off { background: #eef1f4; color: var(--color-secondary); }
+
+.btn-approve { background: var(--color-accent); color: var(--color-white); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; width: auto; }
+.btn-reject, .btn-disburse { background: var(--color-secondary); color: var(--color-white); border: none; padding: 6px 12px; border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; width: auto; margin-left: 6px; }
+td button.secondary { width: auto; padding: 6px 10px; font-size: 12px; margin-right: 4px; }
+
+.section-title { font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--color-secondary); font-weight: 700; margin: 24px 0 8px; }
+.back-link { display: inline-block; margin-bottom: 12px; color: var(--color-secondary); text-decoration: none; font-size: 13px; }
+.detail-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 10px; background: var(--color-white); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 8px; font-size: 13px; }

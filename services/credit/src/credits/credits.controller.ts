@@ -1,12 +1,12 @@
-import { Controller, Get, Param, Req, UseGuards } from '@nestjs/common'
-import { JwtAuthGuard, type AuthenticatedRequest } from '@unicreditos/auth'
+import { Controller, Get, Param, Query, Req, UseGuards } from '@nestjs/common'
+import { JwtAuthGuard, RolesGuard, Roles, type AuthenticatedRequest } from '@unicreditos/auth'
 import { PrismaService } from '../prisma/prisma.service'
 import { DomainError } from '../common/errors/domain-error'
 
 /** Roles con motivo de negocio para ver créditos de un cliente que no es el propio. */
 const CREDIT_STAFF_ROLES: string[] = ['RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO']
 
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller('credits')
 export class CreditsController {
   constructor(private readonly prisma: PrismaService) {}
@@ -14,6 +14,17 @@ export class CreditsController {
   @Get()
   async listMine(@Req() request: AuthenticatedRequest) {
     return this.prisma.client.credit.findMany({ where: { userId: request.user!.id }, orderBy: { createdAt: 'desc' } })
+  }
+
+  // Ruta estática ANTES de ':id' -- si no, Nest interpreta "all" como un id.
+  @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO')
+  @Get('all')
+  async listAll(@Query('status') status?: string) {
+    return this.prisma.client.credit.findMany({
+      where: status ? { status: status as never } : undefined,
+      orderBy: { createdAt: 'desc' },
+      include: { application: { include: { user: { select: { firstName: true, lastName: true, email: true } } } } },
+    })
   }
 
   @Get(':id/installments')

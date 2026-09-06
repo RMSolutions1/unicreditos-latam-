@@ -127,6 +127,24 @@ export class ApplicationsService {
     return this.prisma.client.creditApplication.findMany({ where: { userId }, orderBy: { createdAt: 'desc' }, include: { product: true } })
   }
 
+  /** Cola de revisión para RISK_MANAGER/COMPLIANCE_MANAGER (enforcement en el controller). */
+  async listQueue() {
+    return this.prisma.client.creditApplication.findMany({
+      where: { status: { in: ['PRE_APPROVED', 'MANUAL_REVIEW'] } },
+      orderBy: { createdAt: 'asc' },
+      include: { product: true, user: { select: { firstName: true, lastName: true, email: true } }, decisions: { orderBy: { decidedAt: 'desc' }, take: 1 } },
+    })
+  }
+
+  /** Cola de desembolso para TREASURY_MANAGER (enforcement en el controller). */
+  async listReadyForDisbursement() {
+    return this.prisma.client.creditApplication.findMany({
+      where: { status: 'READY_FOR_DISBURSEMENT' },
+      orderBy: { createdAt: 'asc' },
+      include: { product: true, user: { select: { firstName: true, lastName: true, email: true } } },
+    })
+  }
+
   async getOne(id: string, requester: AuthenticatedUser) {
     const application = await this.prisma.client.creditApplication.findUnique({
       where: { id },

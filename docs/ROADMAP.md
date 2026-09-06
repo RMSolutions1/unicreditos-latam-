@@ -64,9 +64,15 @@ responsive + accesibilidad + seguridad + observabilidad).
 ## Fase 8 — Merchant Portal
 - [ ] Financiación de consumo en comercios adheridos sobre el mismo Credit Engine (producto `MERCHANT`).
 
-## Fase 9 — Admin Backoffice completo
-- [ ] CEO / Risk / Treasury / Payment / Compliance dashboards (métricas de `docs/ARCHITECTURE.md`).
+## Fase 9 — Admin Backoffice (en construcción)
+- [x] Dashboard con métricas reales (tesorería, cola de solicitudes, casos de cobranza, productos).
+- [x] Solicitudes: cola de revisión (aprobar/rechazar) + cola de desembolso + detalle, probado end-to-end en el navegador.
+- [x] Créditos: listado completo + cuotas por crédito.
+- [x] Cobranzas: casos activos, disparar el scan, registrar acciones.
+- [x] Tesorería: dashboard + reconciliación con las diferencias resaltadas visualmente.
+- [ ] Usuarios, Clientes, Comercios, Compliance, Fraude, Documentos, Contratos, Reportes, Notificaciones, Configuración, Auditoría, Sistema.
 - [ ] Tablas admin con búsqueda, filtros, orden, paginación, export asíncrono (`ExportJob`).
+- [ ] Inversores — bloqueado hasta validación legal (Fase 7).
 
 ## Fase 10 — Hardening de producción
 - [ ] Backups diarios cifrados + verificación de restore, PITR si la infraestructura lo permite.

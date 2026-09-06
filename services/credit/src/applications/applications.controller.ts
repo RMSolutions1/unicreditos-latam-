@@ -25,6 +25,19 @@ export class ApplicationsController {
     return this.applications.listMine(request.user!.id)
   }
 
+  // Rutas estáticas ANTES de ':id' -- si no, Nest interpreta "queue" como un id.
+  @Roles('RISK_MANAGER', 'COMPLIANCE_MANAGER', 'SUPER_ADMIN', 'AUDITOR')
+  @Get('queue')
+  listQueue() {
+    return this.applications.listQueue()
+  }
+
+  @Roles('TREASURY_MANAGER', 'SUPER_ADMIN', 'AUDITOR')
+  @Get('ready-for-disbursement')
+  listReadyForDisbursement() {
+    return this.applications.listReadyForDisbursement()
+  }
+
   @Get(':id')
   getOne(@Param('id') id: string, @Req() request: AuthenticatedRequest) {
     return this.applications.getOne(id, request.user!)
