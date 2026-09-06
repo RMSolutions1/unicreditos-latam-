@@ -50,6 +50,9 @@ jobs:
       - name: Typecheck de apps/admin
         run: npx tsc --noEmit -p apps/admin/tsconfig.json
 
+      - name: Typecheck de apps/customer
+        run: npx tsc --noEmit -p apps/customer/tsconfig.json
+
       - name: Tests unitarios
         run: |
           npm test --workspace services/credit
