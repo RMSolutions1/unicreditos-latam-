@@ -5,6 +5,9 @@ import type { LedgerOwnerType } from '@unicreditos/database'
 import { PrismaService } from '../prisma/prisma.service'
 import { DomainError } from '../common/errors/domain-error'
 
+/** Roles con motivo de negocio para ver el ledger de un cliente que no es el propio. */
+const LEDGER_STAFF_ROLES: string[] = ['TREASURY_MANAGER', 'CFO', 'AUDITOR', 'SUPER_ADMIN']
+
 @UseGuards(JwtAuthGuard)
 @Controller('ledger/accounts')
 export class LedgerController {
@@ -17,7 +20,7 @@ export class LedgerController {
     @Req() request: AuthenticatedRequest,
   ) {
     const isSelf = ownerType === 'CUSTOMER' && ownerId === request.user!.id
-    const isStaff = request.user!.role !== 'CUSTOMER'
+    const isStaff = LEDGER_STAFF_ROLES.includes(request.user!.role)
     if (!isSelf && !isStaff) throw new DomainError('INSUFFICIENT_PERMISSIONS', 'No tenés permisos para ver esta cuenta.')
 
     return getAccountBalance(this.prisma.client, ownerType, ownerId)
@@ -30,7 +33,7 @@ export class LedgerController {
     @Req() request: AuthenticatedRequest,
   ) {
     const isSelf = ownerType === 'CUSTOMER' && ownerId === request.user!.id
-    const isStaff = request.user!.role !== 'CUSTOMER'
+    const isStaff = LEDGER_STAFF_ROLES.includes(request.user!.role)
     if (!isSelf && !isStaff) throw new DomainError('INSUFFICIENT_PERMISSIONS', 'No tenés permisos para ver esta cuenta.')
 
     const account = await this.prisma.client.ledgerAccount.findUnique({

@@ -3,6 +3,9 @@ import { JwtAuthGuard, type AuthenticatedRequest } from '@unicreditos/auth'
 import { PrismaService } from '../prisma/prisma.service'
 import { DomainError } from '../common/errors/domain-error'
 
+/** Roles con motivo de negocio para ver créditos de un cliente que no es el propio. */
+const CREDIT_STAFF_ROLES: string[] = ['RISK_MANAGER', 'COMPLIANCE_MANAGER', 'TREASURY_MANAGER', 'OPERATIONS_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CEO', 'CFO']
+
 @UseGuards(JwtAuthGuard)
 @Controller('credits')
 export class CreditsController {
@@ -41,7 +44,9 @@ export class CreditsController {
 
   private async getOwnedCredit(id: string, request: AuthenticatedRequest) {
     const credit = await this.prisma.client.credit.findUnique({ where: { id } })
-    if (!credit || (credit.userId !== request.user!.id && request.user!.role === 'CUSTOMER')) {
+    const isOwner = credit?.userId === request.user!.id
+    const isStaff = CREDIT_STAFF_ROLES.includes(request.user!.role)
+    if (!credit || (!isOwner && !isStaff)) {
       throw new DomainError('NOT_FOUND', 'Crédito no encontrado.')
     }
     return credit

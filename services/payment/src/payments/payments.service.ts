@@ -11,6 +11,9 @@ import type { AuthenticatedUser } from '@unicreditos/auth'
 
 type SessionContext = { ip?: string; userAgent?: string; requestId: string }
 
+/** Roles con motivo de negocio para ver pagos de un cliente que no es el propio. */
+const PAYMENT_STAFF_ROLES: string[] = ['TREASURY_MANAGER', 'SUPPORT', 'AUDITOR', 'SUPER_ADMIN', 'CFO']
+
 @Injectable()
 export class PaymentsService {
   constructor(
@@ -75,7 +78,9 @@ export class PaymentsService {
     const intent = await this.prisma.client.paymentIntent.findUnique({ where: { id }, include: { installment: { include: { credit: true } } } })
     if (!intent) throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
     const isOwner = intent.userId === requester.id
-    if (!isOwner && requester.role === 'CUSTOMER') throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
+    // Hallazgo de auditoría: "cualquier rol que no sea CUSTOMER" era demasiado amplio.
+    const isStaff = PAYMENT_STAFF_ROLES.includes(requester.role)
+    if (!isOwner && !isStaff) throw new DomainError('NOT_FOUND', 'Pago no encontrado.')
     return intent
   }
 
@@ -118,9 +123,15 @@ export class PaymentsService {
     const payment = await this.mercadoPago.getPayment(dataId)
 
     if (payment.status === 'approved' && payment.externalReference) {
-      const intent = await this.prisma.client.paymentIntent.findUnique({ where: { externalReference: payment.externalReference }, include: { installment: { include: { credit: true } } } })
-      if (intent && intent.status !== 'APPROVED') {
-        await this.prisma.client.$transaction(async (tx) => {
+      const intentSummary = await this.prisma.client.paymentIntent.findUnique({ where: { externalReference: payment.externalReference } })
+      if (intentSummary && intentSummary.status !== 'APPROVED') {
+        const approvedNotification = await this.prisma.client.$transaction(async (tx) => {
+          // Releído DENTRO de la transacción (hallazgo de auditoría): el snapshot de afuera podía
+          // quedar stale si dos webhooks para el mismo crédito se procesan casi al mismo tiempo,
+          // pisando el balance/amountPaid calculado con datos viejos.
+          const intent = await tx.paymentIntent.findUniqueOrThrow({ where: { id: intentSummary.id }, include: { installment: { include: { credit: true } } } })
+          if (intent.status === 'APPROVED') return null // otro proceso ya lo aprobó mientras esperábamos el lock
+
           await tx.paymentIntent.update({ where: { id: intent.id }, data: { status: 'APPROVED', providerPaymentId: payment.providerPaymentId } })
 
           const newAmountPaid = Math.min(Number(intent.installment.amountPaid) + Number(intent.amount), Number(intent.installment.totalDue))
@@ -164,19 +175,23 @@ export class PaymentsService {
               requestId: ctx.requestId,
             },
           })
+
+          return { userId: intent.userId, amount: Number(intent.amount), installmentNumber: intent.installment.number, creditPublicId: intent.installment.credit.publicId }
         })
 
         // Fuera de la transacción: un fallo de email no debe revertir un pago ya acreditado.
-        const customer = await this.prisma.client.user.findUnique({ where: { id: intent.userId } })
-        if (customer) {
-          void notify({
-            type: 'PAYMENT_RECEIVED',
-            to: customer.email,
-            firstName: customer.firstName,
-            installmentNumber: intent.installment.number,
-            amount: Number(intent.amount),
-            creditPublicId: intent.installment.credit.publicId,
-          })
+        if (approvedNotification) {
+          const customer = await this.prisma.client.user.findUnique({ where: { id: approvedNotification.userId } })
+          if (customer) {
+            void notify({
+              type: 'PAYMENT_RECEIVED',
+              to: customer.email,
+              firstName: customer.firstName,
+              installmentNumber: approvedNotification.installmentNumber,
+              amount: approvedNotification.amount,
+              creditPublicId: approvedNotification.creditPublicId,
+            })
+          }
         }
       }
     } else if (['rejected', 'cancelled'].includes(payment.status) && payment.externalReference) {

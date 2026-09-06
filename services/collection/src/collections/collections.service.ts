@@ -73,7 +73,8 @@ export class CollectionsService {
       // Solo notifica cuando el caso EMPEORA respecto del último scan — evita spam (master prompt §45).
       const worsened = status !== 'CURRENT' && status !== previousStatus
       if (worsened && credit.application.user.email) {
-        const worstInstallment = overdueInstallments.sort((a, b) => Number(b.dueDate) - Number(a.dueDate))[0]
+        // La cuota "peor" es la más vencida = la de fecha de vencimiento más antigua (ascendente).
+        const worstInstallment = overdueInstallments.sort((a, b) => Number(a.dueDate) - Number(b.dueDate))[0]
         void notify({
           type: 'PAYMENT_OVERDUE',
           to: credit.application.user.email,

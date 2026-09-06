@@ -7,6 +7,17 @@ function money(value: string | number) {
   return new Intl.NumberFormat('es-AR', { style: 'currency', currency: 'ARS', maximumFractionDigits: 0 }).format(Number(value))
 }
 
+/**
+ * Este shell construye el DOM con innerHTML por simplicidad (no hay framework todavía) — cualquier
+ * valor que pueda originarse en input de usuario (nombre, email, mensajes de error) DEBE pasar por
+ * acá antes de interpolarse. Hallazgo de auditoría: firstName no tenía límite de caracteres
+ * permitidos en el registro, así que sin esto un nombre con HTML se ejecutaría en la sesión del
+ * admin que lo mire (self-XSS hoy; XSS real contra staff en cuanto Fase 9 liste otros clientes).
+ */
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!)
+}
+
 function renderTopbar() {
   return `<div class="topbar"><div class="brand">UNI<span>CRÉDITOS</span> · Admin</div></div>`
 }
@@ -18,7 +29,7 @@ function renderLogin(errorMessage?: string) {
       <form class="card" id="login-form">
         <h1>Iniciar sesión</h1>
         <p class="subtitle">Backoffice — acceso interno</p>
-        ${errorMessage ? `<div class="error-box">${errorMessage}</div>` : ''}
+        ${errorMessage ? `<div class="error-box">${escapeHtml(errorMessage)}</div>` : ''}
         <label for="email">Correo</label>
         <input id="email" name="email" type="email" required autocomplete="username" />
         <label for="password">Contraseña</label>
@@ -68,20 +79,20 @@ async function renderDashboard() {
     ${renderTopbar()}
     <div class="dashboard">
       <div class="welcome">
-        <span class="badge">${user.role}</span>
-        <h1>Hola, ${user.firstName}</h1>
-        <p>${user.email} · estado de cuenta: ${user.status}</p>
+        <span class="badge">${escapeHtml(user.role)}</span>
+        <h1>Hola, ${escapeHtml(user.firstName)}</h1>
+        <p>${escapeHtml(user.email)} · estado de cuenta: ${escapeHtml(user.status)}</p>
         <button class="secondary" id="logout-btn" style="width:auto;margin-top:12px;">Cerrar sesión</button>
       </div>
 
       <div class="section-title">Productos de crédito (en vivo, services/credit)</div>
-      ${productsError ? `<div class="error-box">${productsError}</div>` : ''}
+      ${productsError ? `<div class="error-box">${escapeHtml(productsError)}</div>` : ''}
       <div class="grid">
         ${products
           .map(
             (p) => `
           <div class="product-card">
-            <h3>${p.name}</h3>
+            <h3>${escapeHtml(p.name)}</h3>
             <div class="rate">${Number(p.monthlyRate).toFixed(1)}% TEM</div>
             <div class="meta">${money(p.minAmount)} — ${money(p.maxAmount)} · ${p.minTermMonths} a ${p.maxTermMonths} meses</div>
           </div>

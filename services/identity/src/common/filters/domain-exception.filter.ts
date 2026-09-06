@@ -25,12 +25,14 @@ export class DomainExceptionFilter implements ExceptionFilter {
 
     if (exception instanceof HttpException) {
       const status = exception.getStatus()
-      const body = exception.getResponse()
+      const body = exception.getResponse() as { code?: string; message?: string | string[] }
       const message =
-        typeof body === 'string' ? body : Array.isArray((body as { message?: unknown }).message)
-          ? (body as { message: string[] }).message.join(', ')
-          : (body as { message?: string }).message || exception.message
-      const code = status === HttpStatus.BAD_REQUEST ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR'
+        typeof body === 'string' ? body : Array.isArray(body.message) ? body.message.join(', ') : body.message || exception.message
+      // Preserva el `code` de errores lanzados fuera de este servicio (ej. AUTH_ERROR de
+      // @unicreditos/auth, que usan su propia clase DomainError y no la de este archivo) —
+      // antes se perdía y un 401/403 real volvía como "INTERNAL_ERROR" (bug encontrado en
+      // auditoría, presente solo acá porque los demás servicios ya seguían este patrón).
+      const code = body.code ?? (status === HttpStatus.BAD_REQUEST ? 'VALIDATION_ERROR' : 'INTERNAL_ERROR')
       response.status(status).json({ code, message, requestId })
       return
     }
