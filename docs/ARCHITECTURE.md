@@ -138,11 +138,11 @@ permita explícitamente, y sin PII identificable).
 /architecture    → ADRs y diagramas adicionales
 /database        → schema.prisma, migraciones, seeds
 /apps
-  web/           → sitio público (Next.js)
-  customer/      → portal cliente (Next.js) — /app
-  investor/      → portal inversor (Next.js) — /invest, OFF por defecto
-  merchant/      → portal comercio (Next.js)
-  admin/         → backoffice (Next.js) — /admin
+  web/           → sitio público (planeado, no construido todavía)
+  customer/      → portal cliente real — Vite + TypeScript sin framework (mismo criterio que admin/)
+  investor/      → portal inversor (planeado) — OFF por defecto, bloqueado por Fase 7
+  merchant/      → portal comercio (planeado, Fase 8)
+  admin/         → backoffice real — Vite + TypeScript sin framework
 /services
   identity/ kyc/ risk/ credit/ payment/ collection/
   ledger/ treasury/ compliance/ fraud/ notification/ reporting/
