@@ -80,6 +80,20 @@ de mutar nada.
 Requiere: motivo escrito, permiso explícito de un rol superior, `AuditLog` con actor real + actor
 impersonado, timestamp y duración limitada de la sesión de impersonación. Nunca acceso silencioso.
 
+## 6.1 Row Level Security (Supabase)
+
+Supabase expone automáticamente todas las tablas del schema `public` vía PostgREST a los roles
+`anon`/`authenticated` — los que usa la *anon key*, pensada para ser pública en un frontend. Sin
+RLS, esas tablas quedan legibles/escribibles sin pasar por nuestros servicios NestJS si esa key
+llegara a filtrarse o a usarse desde un cliente Supabase directo en el futuro.
+
+Nuestros servicios se conectan a Postgres como el rol `postgres` (superusuario) vía Prisma —
+ese rol siempre bypassea RLS, así que habilitarlo no cambia en nada el comportamiento actual de
+`identity`, `kyc` o `credit`. Es defensa en profundidad específica de Supabase, detectada por su
+linter de seguridad (`get_advisors`) y corregida en la migración `enable_row_level_security`
+(RLS habilitado en las 12 tablas del schema, sin políticas permisivas — el default sin policies
+es denegar todo a los roles de PostgREST).
+
 ## 7. Seguridad de red y headers
 
 TLS obligatorio en todos los ambientes salvo `localhost` de desarrollo. Headers: `Strict-Transport-
